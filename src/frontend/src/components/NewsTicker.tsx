@@ -20,7 +20,7 @@ function setAnchorColor(e: React.MouseEvent<HTMLAnchorElement>, color: string) {
   e.currentTarget.style.color = color;
 }
 
-// Reading speed: ~80px per second — comfortable, readable, not rushed
+// Reading speed: ~80px per second — comfortable, readable
 const PX_PER_SECOND = 80;
 // Average character width in px at 0.72rem (~11.5px)
 const CHAR_WIDTH_PX = 9;
@@ -106,7 +106,11 @@ export function NewsTicker({ articles }: NewsTickerProps) {
         />
         <span
           className="text-xs font-black tracking-widest uppercase"
-          style={{ color: "#FF3B3B", fontSize: "0.6rem", whiteSpace: "nowrap" }}
+          style={{
+            color: "#FF3B3B",
+            fontSize: "0.6rem",
+            whiteSpace: "nowrap",
+          }}
         >
           LIVE
         </span>
@@ -155,6 +159,11 @@ export function NewsTicker({ articles }: NewsTickerProps) {
             alignItems: "center",
             height: "100%",
             whiteSpace: "nowrap",
+            // BUG FIX: must include animationName so the browser applies
+            // the @keyframes ticker-scroll defined in index.css
+            animationName: "ticker-scroll",
+            animationTimingFunction: "linear",
+            animationIterationCount: "infinite",
             animationDuration: `${animationDuration}s`,
             animationPlayState: paused ? "paused" : "running",
           }}

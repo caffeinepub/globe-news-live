@@ -11,13 +11,10 @@ import {
 import type { ReactNode } from "react";
 import * as THREE from "three";
 import type { NewsItem } from "../backend.d";
-import type { EarthquakeItem } from "../types";
-import { NewsPin } from "./NewsPin";
+import type { EarthquakeItem, ISSItem, VolcanoItem } from "../types";
+import { NewsPin, type PinItem, latLngToVector3 } from "./NewsPin";
 
-type PinItem = NewsItem | EarthquakeItem;
-
-// Progressive texture LODs — swapped based on camera distance
-// Far: 2K (fast load), Mid: 4K, Close: 8K-equivalent (sharpest)
+// Progressive texture LODs
 const EARTH_TEXTURE_FAR =
   "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_atmos_2048.jpg";
 const EARTH_TEXTURE_MID =
@@ -29,12 +26,12 @@ const EARTH_BUMP =
 const EARTH_CLOUDS =
   "https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-clouds.png";
 
-const MIN_DISTANCE = 1.6; // allow zooming close enough to see country-level detail
+const MIN_DISTANCE = 1.6;
 const MAX_DISTANCE = 9;
 const ZOOM_STEP = 0.6;
 const ZOOM_LERP = 0.12;
 
-// ── Error Boundary ─────────────────────────────────────────────────────────────
+// ── Error Boundary ───────────────────────────────────────────────────────────────────
 interface EBState {
   hasError: boolean;
   message: string;
@@ -85,7 +82,7 @@ class GlobeErrorBoundary extends Component<{ children: ReactNode }, EBState> {
   }
 }
 
-// ── Loading placeholder ────────────────────────────────────────────────────────
+// ── Loading placeholder ────────────────────────────────────────────────────────────
 function LoadingGlobe() {
   const meshRef = useRef<THREE.Mesh>(null);
   useFrame(() => {
@@ -99,14 +96,11 @@ function LoadingGlobe() {
   );
 }
 
-// Distance thresholds for texture LOD switching
-const LOD_FAR_DIST = 5.5; // > 5.5 units away → 2K texture
-const LOD_MID_DIST = 3.2; // 3.2–5.5 → 4K texture
-// < 3.2 → 8K-equivalent texture (sharpest)
+const LOD_FAR_DIST = 5.5;
+const LOD_MID_DIST = 3.2;
 
-// ── Earth Core — progressively swaps to higher-res texture as user zooms in ──
+// ── Earth Core ────────────────────────────────────────────────────────────────────
 function EarthCore() {
-  // Load all three LOD textures + bump map in parallel
   const textures = useTexture([
     EARTH_TEXTURE_FAR,
     EARTH_TEXTURE_MID,
@@ -118,14 +112,11 @@ function EarthCore() {
   const texClose = textures[2] as THREE.Texture;
   const bumpMap = textures[3] as THREE.Texture;
 
-  // Enable anisotropic filtering on all textures for crisper detail when
-  // viewed at oblique angles (significant improvement when zoomed in)
   const meshRef = useRef<THREE.Mesh>(null);
   const { camera, gl } = useThree();
   const maxAniso = gl.capabilities.getMaxAnisotropy();
   const currentLodRef = useRef<"far" | "mid" | "close">("far");
 
-  // Apply anisotropy once on mount
   useEffect(() => {
     for (const t of [texFar, texMid, texClose]) {
       t.anisotropy = maxAniso;
@@ -138,7 +129,6 @@ function EarthCore() {
     const dist = camera.position.length();
     const mat = meshRef.current.material as THREE.MeshPhongMaterial;
 
-    // Determine which LOD tier we are in
     let newLod: "far" | "mid" | "close";
     if (dist > LOD_FAR_DIST) {
       newLod = "far";
@@ -148,7 +138,6 @@ function EarthCore() {
       newLod = "close";
     }
 
-    // Only swap texture when crossing a LOD boundary
     if (newLod !== currentLodRef.current) {
       currentLodRef.current = newLod;
       mat.map =
@@ -156,7 +145,6 @@ function EarthCore() {
       mat.needsUpdate = true;
     }
 
-    // Bump scale ramps from 0.05 at far to 0.22 at close for tactile terrain relief
     const t = Math.max(
       0,
       Math.min(1, (MAX_DISTANCE - dist) / (MAX_DISTANCE - MIN_DISTANCE)),
@@ -166,7 +154,6 @@ function EarthCore() {
 
   return (
     <mesh ref={meshRef} renderOrder={1}>
-      {/* 256 segments when close for smooth curvature at high zoom */}
       <sphereGeometry args={[2, 256, 256]} />
       <meshPhongMaterial
         map={texFar}
@@ -179,7 +166,6 @@ function EarthCore() {
   );
 }
 
-// ── Fallback Earth ─────────────────────────────────────────────────────────────
 function EarthFallback() {
   return (
     <mesh renderOrder={1}>
@@ -189,7 +175,6 @@ function EarthFallback() {
   );
 }
 
-// ── Cloud layer ────────────────────────────────────────────────────────────────
 function CloudLayer() {
   const cloudsRef = useRef<THREE.Mesh>(null);
   const [cloudsMap] = useTexture([EARTH_CLOUDS]);
@@ -243,7 +228,6 @@ class EarthErrorBoundary extends Component<
   }
 }
 
-// ── Complete Earth mesh ────────────────────────────────────────────────────────
 function EarthMesh() {
   return (
     <>
@@ -284,10 +268,46 @@ function EarthMesh() {
   );
 }
 
-// ── Inner canvas scene ─────────────────────────────────────────────────────────
+// ── ISS Orbit Ring (decorative orbital path) ──────────────────────────────────
+// Thin torus at ~51.6° inclination to approximate ISS orbit
+function ISSOrbitRing({ issLat }: { issLat: number | null }) {
+  const ringRef = useRef<THREE.Mesh>(null);
+  const { camera } = useThree();
+
+  useFrame(() => {
+    if (!ringRef.current) return;
+    const dist = camera.position.length();
+    // Fade out orbit ring when very close or very far
+    const mat = ringRef.current.material as THREE.MeshBasicMaterial;
+    mat.opacity = dist < 2.5 ? 0 : dist > 7 ? 0.02 : 0.05;
+  });
+
+  // Only show when ISS position is known
+  if (issLat === null) return null;
+
+  return (
+    <mesh
+      ref={ringRef}
+      rotation={[Math.PI / 2 - (51.6 * Math.PI) / 180, 0, 0]}
+      renderOrder={0}
+    >
+      <torusGeometry args={[2.12, 0.003, 8, 120]} />
+      <meshBasicMaterial
+        color="#00FFFF"
+        transparent
+        opacity={0.05}
+        depthWrite={false}
+      />
+    </mesh>
+  );
+}
+
+// ── Inner canvas scene ────────────────────────────────────────────────────────────
 interface GlobeContentProps {
   newsItems: NewsItem[];
   earthquakes: EarthquakeItem[];
+  issPosition: ISSItem | null;
+  volcanoes: VolcanoItem[];
   onPinClick: (item: PinItem) => void;
   zoomInRef: React.MutableRefObject<() => void>;
   zoomOutRef: React.MutableRefObject<() => void>;
@@ -296,6 +316,8 @@ interface GlobeContentProps {
 function GlobeContent({
   newsItems,
   earthquakes,
+  issPosition,
+  volcanoes,
   onPinClick,
   zoomInRef,
   zoomOutRef,
@@ -304,7 +326,6 @@ function GlobeContent({
   const controlsRef = useRef<any>(null);
   const targetDistRef = useRef<number>(camera.position.length());
 
-  // Smooth zoom animation
   useFrame(() => {
     const currentDist = camera.position.length();
     const target = targetDistRef.current;
@@ -363,13 +384,28 @@ function GlobeContent({
 
       <EarthMesh />
 
+      {/* ISS orbit ring (subtle decorative arc) */}
+      <ISSOrbitRing issLat={issPosition?.lat ?? null} />
+
+      {/* News pins */}
       {validNews.slice(0, 300).map((item) => (
         <NewsPin key={item.id} item={item} onClick={onPinClick} />
       ))}
 
+      {/* Earthquake pins */}
       {earthquakes.map((eq) => (
         <NewsPin key={eq.id} item={eq} onClick={onPinClick} />
       ))}
+
+      {/* Volcano pins */}
+      {volcanoes.map((v) => (
+        <NewsPin key={v.id} item={v} onClick={onPinClick} />
+      ))}
+
+      {/* ISS live position pin */}
+      {issPosition && (
+        <NewsPin key="iss" item={issPosition} onClick={onPinClick} />
+      )}
 
       {/* Invisible sphere to catch double-click */}
       <mesh visible={false} onDoubleClick={handleDoubleClick} renderOrder={-1}>
@@ -389,7 +425,6 @@ function GlobeContent({
         onEnd={handleEnd}
         makeDefault
         domElement={gl.domElement}
-        // Smoother scroll zoom
         zoomSpeed={0.6}
       />
     </>
@@ -399,12 +434,16 @@ function GlobeContent({
 interface GlobeSceneProps {
   newsItems: NewsItem[];
   earthquakes: EarthquakeItem[];
+  issPosition: ISSItem | null;
+  volcanoes: VolcanoItem[];
   onPinClick: (item: PinItem) => void;
 }
 
 export function GlobeScene({
   newsItems,
   earthquakes,
+  issPosition,
+  volcanoes,
   onPinClick,
 }: GlobeSceneProps) {
   const zoomInRef = useRef<() => void>(() => {});
@@ -426,6 +465,8 @@ export function GlobeScene({
           <GlobeContent
             newsItems={newsItems}
             earthquakes={earthquakes}
+            issPosition={issPosition}
+            volcanoes={volcanoes}
             onPinClick={onPinClick}
             zoomInRef={zoomInRef}
             zoomOutRef={zoomOutRef}
@@ -474,6 +515,7 @@ export function GlobeScene({
                 "rgba(11,19,36,0.82)";
               (e.currentTarget as HTMLButtonElement).style.color = "#A9B3C7";
             }}
+            data-ocid="globe.zoom_in_button"
           >
             +
           </button>
@@ -507,10 +549,60 @@ export function GlobeScene({
                 "rgba(11,19,36,0.82)";
               (e.currentTarget as HTMLButtonElement).style.color = "#A9B3C7";
             }}
+            data-ocid="globe.zoom_out_button"
           >
             \u2212
           </button>
         </div>
+
+        {/* ISS live indicator */}
+        {issPosition && (
+          <div
+            style={{
+              position: "absolute",
+              top: "12px",
+              left: "12px",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              background: "rgba(0,20,30,0.75)",
+              backdropFilter: "blur(6px)",
+              border: "1px solid rgba(0,255,255,0.25)",
+              borderRadius: 8,
+              padding: "4px 10px",
+              zIndex: 5,
+            }}
+          >
+            <span
+              className="animate-pulse-dot"
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: "#00FFFF",
+                display: "inline-block",
+              }}
+            />
+            <span
+              style={{
+                fontSize: "0.6rem",
+                fontWeight: 700,
+                color: "#00FFFF",
+                letterSpacing: "0.08em",
+              }}
+            >
+              ISS LIVE
+            </span>
+            <span
+              style={{
+                fontSize: "0.6rem",
+                color: "rgba(0,255,255,0.6)",
+              }}
+            >
+              {issPosition.altitude}km alt
+            </span>
+          </div>
+        )}
       </div>
     </GlobeErrorBoundary>
   );

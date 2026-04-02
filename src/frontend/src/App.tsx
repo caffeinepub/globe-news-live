@@ -6,13 +6,18 @@ import { GlobeScene } from "./components/GlobeScene";
 import { Header } from "./components/Header";
 import { MarketPrices } from "./components/MarketPrices";
 import { NewsPanel } from "./components/NewsPanel";
+import type { PinItem } from "./components/NewsPin";
 import { NewsTicker } from "./components/NewsTicker";
 import { PinOverlay } from "./components/PinOverlay";
+import { SpaceWeatherWidget } from "./components/SpaceWeather";
 import { useEarthquakes } from "./hooks/useEarthquakes";
+import { useISS } from "./hooks/useISS";
 import { useNews } from "./hooks/useNews";
-import type { EarthquakeItem } from "./types";
+import { useSpaceWeather } from "./hooks/useSpaceWeather";
+import { useVolcanoes } from "./hooks/useVolcanoes";
+import type { EarthquakeItem, ISSItem, VolcanoItem } from "./types";
 
-type SelectedItem = NewsItem | EarthquakeItem | null;
+type SelectedItem = PinItem | null;
 
 export default function App() {
   const [selectedItem, setSelectedItem] = useState<SelectedItem>(null);
@@ -20,8 +25,24 @@ export default function App() {
 
   const { news, isLoading, lastUpdated, refresh } = useNews();
   const { earthquakes } = useEarthquakes();
+  const issRaw = useISS();
+  const volcanoes = useVolcanoes();
+  const spaceWeather = useSpaceWeather();
 
-  const handlePinClick = useCallback((item: NewsItem | EarthquakeItem) => {
+  // Shape ISS position into ISSItem for the globe
+  const issPosition: ISSItem | null = issRaw
+    ? {
+        id: "iss",
+        lat: issRaw.lat,
+        lng: issRaw.lng,
+        altitude: issRaw.altitude,
+        velocity: issRaw.velocity,
+        title: `ISS — Live Position (${issRaw.altitude}km altitude, ${issRaw.velocity.toLocaleString()} km/h)`,
+        isISS: true as const,
+      }
+    : null;
+
+  const handlePinClick = useCallback((item: PinItem) => {
     setSelectedItem(item);
   }, []);
 
@@ -82,6 +103,8 @@ export default function App() {
                 <GlobeScene
                   newsItems={displayArticles}
                   earthquakes={earthquakes}
+                  issPosition={issPosition}
+                  volcanoes={volcanoes}
                   onPinClick={handlePinClick}
                 />
               </motion.div>
@@ -100,7 +123,6 @@ export default function App() {
                 News ({displayArticles.length} pinned)
               </span>
               <span className="flex items-center gap-1">
-                {/* Earthquake magnitude color scale */}
                 <span
                   className="w-2 h-2 rounded-full inline-block"
                   style={{ background: "#FFD700" }}
@@ -125,6 +147,22 @@ export default function App() {
                   Earthquakes ({earthquakes.length} past 24h)
                 </span>
               </span>
+              <span className="flex items-center gap-1.5">
+                <span
+                  className="w-2.5 h-2.5 rounded-full"
+                  style={{ background: "#FF4500" }}
+                />
+                Volcanoes ({volcanoes.length} active)
+              </span>
+              {issPosition && (
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full animate-pulse-dot"
+                    style={{ background: "#00FFFF" }}
+                  />
+                  ISS Live
+                </span>
+              )}
               {lastUpdatedDisplay && (
                 <span style={{ color: "#3A4560" }}>
                   Updated {lastUpdatedDisplay} · auto-refreshes hourly
@@ -136,7 +174,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Right sidebar — Markets + News + Ticker — desktop only */}
+          {/* Right sidebar — Markets + Space Weather + News + Ticker — desktop only */}
           <div
             className="hidden lg:flex flex-col shrink-0"
             style={{
@@ -147,15 +185,16 @@ export default function App() {
             }}
           >
             <MarketPrices />
+            <SpaceWeatherWidget data={spaceWeather} />
             <div className="flex-1 min-h-0 flex flex-col">
               <div className="flex-1 min-h-0">
                 <NewsPanel
                   articles={displayArticles}
                   isLoading={isLoading}
-                  onItemClick={handlePinClick}
+                  onItemClick={(item) => handlePinClick(item as PinItem)}
                 />
               </div>
-              {/* News ticker in the bottom space */}
+              {/* News ticker */}
               <NewsTicker articles={displayArticles} />
             </div>
           </div>
@@ -166,7 +205,7 @@ export default function App() {
           <NewsPanel
             articles={displayArticles}
             isLoading={isLoading}
-            onItemClick={handlePinClick}
+            onItemClick={(item) => handlePinClick(item as PinItem)}
           />
         </div>
 

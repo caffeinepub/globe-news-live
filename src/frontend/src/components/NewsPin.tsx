@@ -3,12 +3,20 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useRef, useState } from "react";
 import * as THREE from "three";
 import type { NewsItem } from "../backend.d";
-import type { EarthquakeItem } from "../types";
+import type { EarthquakeItem, ISSItem, VolcanoItem } from "../types";
 
-type PinItem = NewsItem | EarthquakeItem;
+export type PinItem = NewsItem | EarthquakeItem | ISSItem | VolcanoItem;
 
 export function isEarthquake(item: PinItem): item is EarthquakeItem {
   return (item as EarthquakeItem).isEarthquake === true;
+}
+
+export function isISS(item: PinItem): item is ISSItem {
+  return (item as ISSItem).isISS === true;
+}
+
+export function isVolcano(item: PinItem): item is VolcanoItem {
+  return (item as VolcanoItem).isVolcano === true;
 }
 
 export function latLngToVector3(
@@ -51,12 +59,26 @@ export function NewsPin({ item, onClick }: NewsPinProps) {
   const camDistRef = useRef(REFERENCE_DIST);
 
   const quake = isEarthquake(item);
+  const iss = isISS(item);
+  const volcano = isVolcano(item);
   const pos = latLngToVector3(item.lat, item.lng);
 
   let color: string;
   let baseSize: number;
 
-  if (quake) {
+  if (iss) {
+    color = "#00FFFF";
+    baseSize = 0.04;
+  } else if (volcano) {
+    const statusColor =
+      item.status === "Erupting"
+        ? "#FF4500"
+        : item.status === "Unrest"
+          ? "#FF6AC1"
+          : "#FF8C69";
+    color = statusColor;
+    baseSize = 0.03;
+  } else if (quake) {
     const style = earthquakeStyle(item.magnitude);
     color = style.color;
     baseSize = style.size;
@@ -70,9 +92,6 @@ export function NewsPin({ item, onClick }: NewsPinProps) {
     camDistRef.current = dist;
 
     if (!groupRef.current) return;
-    // Scale pin geometry so it stays the same WORLD size relative to the globe
-    // but doesn't get distorted by camera distance. We want the sphere to always
-    // appear roughly the same screen size regardless of zoom.
     const distScale = dist / REFERENCE_DIST;
     const clamped = Math.max(0.4, Math.min(2.0, distScale));
     const hoverBoost = hovered ? 1.8 : 1;
@@ -80,7 +99,11 @@ export function NewsPin({ item, onClick }: NewsPinProps) {
   });
 
   let labelContent: string;
-  if (quake) {
+  if (iss) {
+    labelContent = `\u{1F6F0}\uFE0F ISS — Alt: ${item.altitude}km`;
+  } else if (volcano) {
+    labelContent = `\uD83C\uDF0B ${item.name} — ${item.status}`;
+  } else if (quake) {
     labelContent = `M${item.magnitude.toFixed(1)} \u2014 ${
       item.place.length > 40 ? `${item.place.slice(0, 40)}\u2026` : item.place
     }`;
@@ -89,7 +112,13 @@ export function NewsPin({ item, onClick }: NewsPinProps) {
       item.title.length > 50 ? `${item.title.slice(0, 50)}\u2026` : item.title;
   }
 
-  const tooltipBg = quake ? `${color}ee` : "rgba(255,59,59,0.92)";
+  const tooltipBg = iss
+    ? "rgba(0,220,255,0.92)"
+    : volcano
+      ? "rgba(255,69,0,0.92)"
+      : quake
+        ? `${color}ee`
+        : "rgba(255,59,59,0.92)";
 
   return (
     <group position={pos.toArray()}>
@@ -101,7 +130,7 @@ export function NewsPin({ item, onClick }: NewsPinProps) {
           <meshBasicMaterial
             color={color}
             transparent
-            opacity={hovered ? 0.4 : 0.22}
+            opacity={hovered ? 0.4 : iss ? 0.35 : 0.22}
             depthWrite={false}
           />
         </mesh>
@@ -128,16 +157,21 @@ export function NewsPin({ item, onClick }: NewsPinProps) {
           <sphereGeometry args={[baseSize, 10, 10]} />
           <meshBasicMaterial color={color} />
         </mesh>
+
+        {/* Extra glow pulse for ISS */}
+        {iss && (
+          <mesh renderOrder={1}>
+            <sphereGeometry args={[baseSize * 2.5, 8, 8]} />
+            <meshBasicMaterial
+              color="#00FFFF"
+              transparent
+              opacity={0.08}
+              depthWrite={false}
+            />
+          </mesh>
+        )}
       </group>
 
-      {/*
-        Hover label:
-        - distanceFactor={10} makes R3F scale the HTML down as camera is far,
-          which we deliberately UNDO with an inline font-size that scales up
-          proportionally, resulting in constant apparent text size on screen.
-        - We compute compensation so: apparentSize = htmlSize / (dist / 10)
-          => we set fontSize = BASE_PX * (dist / 10) so they cancel out.
-      */}
       {hovered && (
         <Html
           center
@@ -169,15 +203,10 @@ function LabelContent({
 }) {
   const labelRef = useRef<HTMLDivElement>(null);
 
-  // Adjust font size every frame so apparent size stays constant at ~11px
-  // distanceFactor=10 means Three scales the Html element by factor (10 / dist),
-  // so to compensate we multiply our desired px by (dist / 10).
   useFrame(() => {
     if (!labelRef.current) return;
     const dist = camDistRef.current;
-    // Target apparent size: 11px at any zoom level
     const compensatedPx = Math.round(11 * (dist / 10));
-    // Clamp so it doesn't get too tiny or huge during transitions
     const clamped = Math.max(8, Math.min(28, compensatedPx));
     labelRef.current.style.fontSize = `${clamped}px`;
   });

@@ -11,6 +11,27 @@ export interface EarthquakeItem {
   isEarthquake: true;
 }
 
+export interface ISSItem {
+  id: "iss";
+  lat: number;
+  lng: number;
+  altitude: number; // km
+  velocity: number; // km/h
+  title: string;
+  isISS: true;
+}
+
+export interface VolcanoItem {
+  id: string;
+  lat: number;
+  lng: number;
+  name: string;
+  country: string;
+  status: string; // "Erupting" | "Unrest" | "Active"
+  title: string;
+  isVolcano: true;
+}
+
 // Category keyword mapping
 export const CATEGORIES = [
   "All",

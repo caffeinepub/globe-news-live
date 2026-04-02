@@ -2,12 +2,24 @@ import { AlertTriangle, Clock, ExternalLink, MapPin, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect } from "react";
 import type { NewsItem } from "../backend.d";
-import type { EarthquakeItem } from "../types";
+import type { EarthquakeItem, ISSItem, VolcanoItem } from "../types";
 
-type ModalItem = NewsItem | EarthquakeItem;
+type ModalItem = NewsItem | EarthquakeItem | ISSItem | VolcanoItem;
 
 function isEarthquake(item: ModalItem): item is EarthquakeItem {
   return (item as EarthquakeItem).isEarthquake === true;
+}
+
+function isISS(item: ModalItem): item is ISSItem {
+  return (item as ISSItem).isISS === true;
+}
+
+function isVolcano(item: ModalItem): item is VolcanoItem {
+  return (item as VolcanoItem).isVolcano === true;
+}
+
+function isNews(item: ModalItem): item is NewsItem {
+  return !isEarthquake(item) && !isISS(item) && !isVolcano(item);
 }
 
 function formatDate(iso: string): string {
@@ -43,6 +55,12 @@ function getMagnitudeColor(mag: number): string {
   return "#FFA940";
 }
 
+function volcanoStatusColor(status: string): string {
+  if (status === "Erupting") return "#FF4500";
+  if (status === "Unrest") return "#FF6AC1";
+  return "#FF8C69";
+}
+
 interface PinOverlayProps {
   item: ModalItem | null;
   onClose: () => void;
@@ -60,6 +78,9 @@ export function PinOverlay({ item, onClose }: PinOverlayProps) {
   function getAccentGradient(i: ModalItem): string {
     if (isEarthquake(i))
       return `linear-gradient(90deg, ${getMagnitudeColor(i.magnitude)}, #FFB340)`;
+    if (isISS(i)) return "linear-gradient(90deg, #00FFFF, #0080FF)";
+    if (isVolcano(i))
+      return `linear-gradient(90deg, ${volcanoStatusColor(i.status)}, #FF8C69)`;
     return "linear-gradient(90deg, #FF3B3B, #FF6B6B)";
   }
 
@@ -121,6 +142,28 @@ export function PinOverlay({ item, onClose }: PinOverlayProps) {
                     <AlertTriangle className="w-2.5 h-2.5" />
                     EARTHQUAKE
                   </span>
+                ) : isISS(item) ? (
+                  <span
+                    className="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold"
+                    style={{
+                      background: "rgba(0,255,255,0.1)",
+                      color: "#00FFFF",
+                      border: "1px solid rgba(0,255,255,0.3)",
+                    }}
+                  >
+                    ISS LIVE
+                  </span>
+                ) : isVolcano(item) ? (
+                  <span
+                    className="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold"
+                    style={{
+                      background: "rgba(255,69,0,0.15)",
+                      color: volcanoStatusColor(item.status),
+                      border: "1px solid rgba(255,69,0,0.3)",
+                    }}
+                  >
+                    🌋 VOLCANO
+                  </span>
                 ) : (
                   <span className="badge-breaking">BREAKING</span>
                 )}
@@ -128,9 +171,15 @@ export function PinOverlay({ item, onClose }: PinOverlayProps) {
                   className="text-xs font-semibold"
                   style={{ color: "#A9B3C7" }}
                 >
-                  {isEarthquake(item) ? "USGS" : item.source}
+                  {isEarthquake(item)
+                    ? "USGS"
+                    : isISS(item)
+                      ? "wheretheiss.at"
+                      : isVolcano(item)
+                        ? item.country
+                        : item.source}
                 </span>
-                {!isEarthquake(item) && (
+                {isNews(item) && (
                   <span
                     className="text-xs flex items-center gap-1"
                     style={{ color: "#A9B3C7" }}
@@ -169,7 +218,149 @@ export function PinOverlay({ item, onClose }: PinOverlayProps) {
                 {item.title}
               </h2>
 
-              {isEarthquake(item) ? (
+              {isISS(item) && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div
+                      className="rounded-xl p-3"
+                      style={{
+                        background: "rgba(0,255,255,0.06)",
+                        border: "1px solid rgba(0,255,255,0.15)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          color: "#00FFFF",
+                          fontSize: "1.5rem",
+                          fontWeight: 800,
+                        }}
+                      >
+                        {item.altitude}
+                        <span
+                          style={{
+                            fontSize: "0.75rem",
+                            fontWeight: 500,
+                            color: "#A9B3C7",
+                            marginLeft: 4,
+                          }}
+                        >
+                          km
+                        </span>
+                      </div>
+                      <div style={{ color: "#A9B3C7", fontSize: "0.7rem" }}>
+                        Altitude
+                      </div>
+                    </div>
+                    <div
+                      className="rounded-xl p-3"
+                      style={{
+                        background: "rgba(0,255,255,0.06)",
+                        border: "1px solid rgba(0,255,255,0.15)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          color: "#00FFFF",
+                          fontSize: "1.5rem",
+                          fontWeight: 800,
+                        }}
+                      >
+                        {item.velocity.toLocaleString()}
+                        <span
+                          style={{
+                            fontSize: "0.75rem",
+                            fontWeight: 500,
+                            color: "#A9B3C7",
+                            marginLeft: 4,
+                          }}
+                        >
+                          km/h
+                        </span>
+                      </div>
+                      <div style={{ color: "#A9B3C7", fontSize: "0.7rem" }}>
+                        Velocity
+                      </div>
+                    </div>
+                  </div>
+                  <div
+                    className="flex items-center gap-2"
+                    style={{ color: "#A9B3C7", fontSize: "0.8rem" }}
+                  >
+                    <MapPin
+                      className="w-4 h-4 shrink-0"
+                      style={{ color: "#00FFFF" }}
+                    />
+                    <span>
+                      Position: {item.lat.toFixed(2)}° lat,{" "}
+                      {item.lng.toFixed(2)}° lng
+                    </span>
+                  </div>
+                  <p style={{ color: "#3A4560", fontSize: "0.75rem" }}>
+                    The ISS orbits Earth at ~400km altitude traveling at
+                    approximately 28,000 km/h, completing one orbit every 90
+                    minutes. This position updates every 10 seconds.
+                  </p>
+                </div>
+              )}
+
+              {isVolcano(item) && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-4">
+                    <div
+                      className="flex flex-col items-center justify-center rounded-2xl shrink-0"
+                      style={{
+                        width: 72,
+                        height: 72,
+                        background: "rgba(255,69,0,0.1)",
+                        border: `2px solid ${volcanoStatusColor(item.status)}`,
+                      }}
+                    >
+                      <span style={{ fontSize: "1.6rem" }}>🌋</span>
+                      <span
+                        style={{
+                          fontSize: "0.55rem",
+                          color: volcanoStatusColor(item.status),
+                          fontWeight: 700,
+                        }}
+                      >
+                        {item.status.toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <MapPin
+                          className="w-4 h-4 shrink-0"
+                          style={{ color: "#FF8C00" }}
+                        />
+                        <span
+                          style={{ color: "#E9EEF7", fontSize: "0.875rem" }}
+                        >
+                          {item.name}, {item.country}
+                        </span>
+                      </div>
+                      <div style={{ color: "#A9B3C7", fontSize: "0.8rem" }}>
+                        Lat: {item.lat.toFixed(3)}°, Lng: {item.lng.toFixed(3)}°
+                      </div>
+                      <span
+                        className="inline-block px-2 py-0.5 rounded text-xs font-bold"
+                        style={{
+                          background: `${volcanoStatusColor(item.status)}20`,
+                          color: volcanoStatusColor(item.status),
+                          border: `1px solid ${volcanoStatusColor(item.status)}40`,
+                        }}
+                      >
+                        {item.status}
+                      </span>
+                    </div>
+                  </div>
+                  <p style={{ color: "#3A4560", fontSize: "0.75rem" }}>
+                    Source: Smithsonian Institution Global Volcanism Program.
+                    Activity status based on reports from 2024–2026.
+                  </p>
+                </div>
+              )}
+
+              {isEarthquake(item) && (
                 <>
                   {/* Magnitude display */}
                   <div className="flex items-center gap-4 mb-5">
@@ -178,7 +369,13 @@ export function PinOverlay({ item, onClose }: PinOverlayProps) {
                       style={{
                         width: 80,
                         height: 80,
-                        background: `rgba(${item.magnitude >= 7 ? "255,32,32" : item.magnitude >= 5 ? "255,107,0" : "255,140,0"},0.12)`,
+                        background: `rgba(${
+                          item.magnitude >= 7
+                            ? "255,32,32"
+                            : item.magnitude >= 5
+                              ? "255,107,0"
+                              : "255,140,0"
+                        },0.12)`,
                         border: `2px solid ${getMagnitudeColor(item.magnitude)}`,
                         flexShrink: 0,
                       }}
@@ -227,65 +424,68 @@ export function PinOverlay({ item, onClose }: PinOverlayProps) {
                           <line x1="5" y1="21" x2="19" y2="21" />
                         </svg>
                         <span className="text-sm" style={{ color: "#A9B3C7" }}>
-                          Depth:{" "}
-                          <span style={{ color: "#E9EEF7" }}>
-                            {item.depth.toFixed(1)} km
-                          </span>
+                          Depth: {item.depth} km
                         </span>
                       </div>
                     </div>
                   </div>
 
-                  {/* USGS link */}
-                  {item.url && (
-                    <div className="flex justify-end">
-                      <a
-                        href={item.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold text-white transition-opacity hover:opacity-90"
-                        style={{ background: "#FF8C00" }}
-                        data-ocid="overlay.primary_button"
-                      >
-                        View on USGS
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <>
-                  <p
-                    className="text-sm leading-relaxed mb-5"
-                    style={{ color: "#A9B3C7" }}
+                  <a
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80"
+                    style={{
+                      background: "rgba(255,140,0,0.12)",
+                      color: "#FF8C00",
+                      border: "1px solid rgba(255,140,0,0.3)",
+                    }}
+                    data-ocid="overlay.link"
                   >
-                    {item.description ||
-                      "No description available for this story."}
-                  </p>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <MapPin
-                        className="w-3.5 h-3.5"
-                        style={{ color: "#A9B3C7" }}
-                      />
-                      <span className="text-xs" style={{ color: "#A9B3C7" }}>
-                        {item.country}
-                      </span>
-                    </div>
-                    {item.url && (
-                      <a
-                        href={item.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold text-white transition-opacity hover:opacity-90"
-                        style={{ background: "#FF3B3B" }}
-                        data-ocid="overlay.primary_button"
-                      >
-                        Read Full Story
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-                    )}
+                    <ExternalLink className="w-4 h-4" />
+                    View on USGS
+                  </a>
+                </>
+              )}
+
+              {isNews(item) && (
+                <>
+                  {item.description && (
+                    <p
+                      className="text-sm leading-relaxed mb-5"
+                      style={{ color: "#A9B3C7" }}
+                    >
+                      {item.description.length > 280
+                        ? `${item.description.slice(0, 280)}\u2026`
+                        : item.description}
+                    </p>
+                  )}
+
+                  <div
+                    className="flex items-center gap-3 mb-5 text-xs"
+                    style={{ color: "#3A4560" }}
+                  >
+                    <span className="flex items-center gap-1">
+                      <MapPin className="w-3 h-3" />
+                      {item.country}
+                    </span>
                   </div>
+
+                  <a
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80"
+                    style={{
+                      background: "rgba(255,59,59,0.12)",
+                      color: "#FF3B3B",
+                      border: "1px solid rgba(255,59,59,0.3)",
+                    }}
+                    data-ocid="overlay.link"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    Read full story
+                  </a>
                 </>
               )}
             </div>
