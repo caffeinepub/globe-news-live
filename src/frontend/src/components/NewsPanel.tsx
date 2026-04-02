@@ -1,8 +1,5 @@
 import { motion } from "motion/react";
 import type { NewsItem } from "../backend.d";
-import type { StreamItem } from "../types";
-
-type FeedItem = NewsItem | StreamItem;
 
 function relativeTime(iso: string): string {
   try {
@@ -30,19 +27,15 @@ function statusLabel(iso: string): { label: string; breaking: boolean } {
 
 interface NewsPanelProps {
   articles: NewsItem[];
-  streams: StreamItem[];
   isLoading: boolean;
-  onItemClick: (item: FeedItem) => void;
+  onItemClick: (item: NewsItem) => void;
 }
 
 export function NewsPanel({
   articles,
-  streams,
   isLoading,
   onItemClick,
 }: NewsPanelProps) {
-  const total = articles.length + streams.length;
-
   return (
     <aside
       className="flex flex-col h-full"
@@ -68,14 +61,17 @@ export function NewsPanel({
         </div>
         <span
           className="text-xs font-bold px-2 py-0.5 rounded-full"
-          style={{ background: "rgba(47,123,255,0.15)", color: "#2F7BFF" }}
+          style={{ background: "rgba(255,59,59,0.15)", color: "#FF3B3B" }}
         >
-          {total}
+          {articles.length}
         </span>
       </div>
 
       {/* Scrollable list */}
-      <div className="flex-1 overflow-y-auto" data-ocid="panel.list">
+      <div
+        className="news-scroll flex-1 overflow-y-auto"
+        data-ocid="panel.list"
+      >
         {isLoading && (
           <div className="p-4 space-y-3" data-ocid="panel.loading_state">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -97,49 +93,18 @@ export function NewsPanel({
           </div>
         )}
 
-        {!isLoading && total === 0 && (
+        {!isLoading && articles.length === 0 && (
           <div
             className="p-6 text-center text-sm"
             style={{ color: "#A9B3C7" }}
             data-ocid="panel.empty_state"
           >
-            No stories found for this category.
+            No stories found.
           </div>
         )}
 
-        {/* Livestream entries */}
-        {streams.map((s, idx) => (
-          <motion.button
-            type="button"
-            key={s.id}
-            onClick={() => onItemClick(s)}
-            className="w-full text-left px-4 py-3 transition-colors"
-            style={{ borderBottom: "1px solid rgba(27,35,52,0.8)" }}
-            initial={{ opacity: 0, x: 8 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: idx * 0.03 }}
-            data-ocid={`panel.item.${idx + 1}`}
-            whileHover={{ backgroundColor: "rgba(47,123,255,0.06)" }}
-          >
-            <div className="flex items-start gap-2.5">
-              <span className="badge-live mt-0.5 shrink-0">LIVE</span>
-              <div className="flex-1 min-w-0">
-                <p
-                  className="text-xs font-bold leading-tight line-clamp-2"
-                  style={{ color: "#E9EEF7" }}
-                >
-                  {s.title}
-                </p>
-                <p className="text-xs mt-1" style={{ color: "#A9B3C7" }}>
-                  {s.source} · {s.country}
-                </p>
-              </div>
-            </div>
-          </motion.button>
-        ))}
-
-        {/* News article entries */}
-        {articles.slice(0, 60).map((item, idx) => {
+        {/* News article entries — most recent first */}
+        {articles.slice(0, 100).map((item, idx) => {
           const { label, breaking } = statusLabel(item.publishedAt);
           return (
             <motion.button
@@ -150,8 +115,8 @@ export function NewsPanel({
               style={{ borderBottom: "1px solid rgba(27,35,52,0.8)" }}
               initial={{ opacity: 0, x: 8 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: (idx + streams.length) * 0.015 }}
-              data-ocid={`panel.item.${idx + streams.length + 1}`}
+              transition={{ delay: idx * 0.015 }}
+              data-ocid={`panel.item.${idx + 1}`}
               whileHover={{ backgroundColor: "rgba(255,255,255,0.04)" }}
             >
               <div className="flex items-start gap-2.5">

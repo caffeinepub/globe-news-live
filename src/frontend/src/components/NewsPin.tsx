@@ -1,14 +1,11 @@
 import { Html } from "@react-three/drei";
+import { useFrame, useThree } from "@react-three/fiber";
 import { useRef, useState } from "react";
 import * as THREE from "three";
 import type { NewsItem } from "../backend.d";
-import type { EarthquakeItem, StreamItem } from "../types";
+import type { EarthquakeItem } from "../types";
 
-type PinItem = NewsItem | StreamItem | EarthquakeItem;
-
-function isStream(item: PinItem): item is StreamItem {
-  return (item as StreamItem).isStream === true;
-}
+type PinItem = NewsItem | EarthquakeItem;
 
 export function isEarthquake(item: PinItem): item is EarthquakeItem {
   return (item as EarthquakeItem).isEarthquake === true;
@@ -28,29 +25,16 @@ export function latLngToVector3(
   );
 }
 
-/**
- * Returns color and size for earthquake pins based on magnitude:
- *  < 2.5  → small yellow dot
- *  2.5–4  → medium yellow-orange dot
- *  4–5.5  → medium-large orange dot
- *  5.5–7  → large red-orange dot
- *  >= 7   → very large deep red dot
- */
 function earthquakeStyle(mag: number): { color: string; size: number } {
-  if (mag >= 7) {
-    return { color: "#CC0000", size: 0.12 };
-  }
-  if (mag >= 5.5) {
-    return { color: "#FF3300", size: 0.09 };
-  }
-  if (mag >= 4) {
-    return { color: "#FF6600", size: 0.065 };
-  }
-  if (mag >= 2.5) {
-    return { color: "#FFA500", size: 0.045 };
-  }
+  if (mag >= 7) return { color: "#CC0000", size: 0.12 };
+  if (mag >= 5.5) return { color: "#FF3300", size: 0.09 };
+  if (mag >= 4) return { color: "#FF6600", size: 0.065 };
+  if (mag >= 2.5) return { color: "#FFA500", size: 0.045 };
   return { color: "#FFD700", size: 0.03 };
 }
+
+// The reference distance at which pin geometry was designed (world units)
+const REFERENCE_DIST = 5;
 
 interface NewsPinProps {
   item: PinItem;
@@ -59,12 +43,16 @@ interface NewsPinProps {
 
 export function NewsPin({ item, onClick }: NewsPinProps) {
   const meshRef = useRef<THREE.Mesh>(null);
+  const groupRef = useRef<THREE.Group>(null);
   const [hovered, setHovered] = useState(false);
-  const stream = isStream(item);
+  const { camera } = useThree();
+
+  // Reactive camera distance for label sizing
+  const camDistRef = useRef(REFERENCE_DIST);
+
   const quake = isEarthquake(item);
   const pos = latLngToVector3(item.lat, item.lng);
 
-  // Determine color and base size
   let color: string;
   let baseSize: number;
 
@@ -72,103 +60,148 @@ export function NewsPin({ item, onClick }: NewsPinProps) {
     const style = earthquakeStyle(item.magnitude);
     color = style.color;
     baseSize = style.size;
-  } else if (stream) {
-    color = "#2F7BFF";
-    baseSize = 0.03;
   } else {
     color = "#FF3B3B";
     baseSize = 0.025;
   }
 
-  const scale = hovered ? 2.0 : 1;
+  useFrame(() => {
+    const dist = camera.position.length();
+    camDistRef.current = dist;
 
-  // Hover label content
+    if (!groupRef.current) return;
+    // Scale pin geometry so it stays the same WORLD size relative to the globe
+    // but doesn't get distorted by camera distance. We want the sphere to always
+    // appear roughly the same screen size regardless of zoom.
+    const distScale = dist / REFERENCE_DIST;
+    const clamped = Math.max(0.4, Math.min(2.0, distScale));
+    const hoverBoost = hovered ? 1.8 : 1;
+    groupRef.current.scale.setScalar(clamped * hoverBoost);
+  });
+
   let labelContent: string;
   if (quake) {
-    labelContent = `M${item.magnitude.toFixed(1)} — ${
-      item.place.length > 40 ? `${item.place.slice(0, 40)}…` : item.place
+    labelContent = `M${item.magnitude.toFixed(1)} \u2014 ${
+      item.place.length > 40 ? `${item.place.slice(0, 40)}\u2026` : item.place
     }`;
-  } else if (stream) {
-    labelContent =
-      item.title.length > 50 ? `${item.title.slice(0, 50)}…` : item.title;
   } else {
     labelContent =
-      item.title.length > 50 ? `${item.title.slice(0, 50)}…` : item.title;
+      item.title.length > 50 ? `${item.title.slice(0, 50)}\u2026` : item.title;
   }
 
-  const tooltipBg = stream
-    ? "rgba(47,123,255,0.92)"
-    : quake
-      ? `${color}ee`
-      : "rgba(255,59,59,0.92)";
+  const tooltipBg = quake ? `${color}ee` : "rgba(255,59,59,0.92)";
 
   return (
     <group position={pos.toArray()}>
-      {/* Outer glow ring */}
-      <mesh scale={[scale * 1.7, scale * 1.7, scale * 1.7]} renderOrder={2}>
-        <sphereGeometry args={[baseSize * 1.6, 10, 10]} />
-        <meshBasicMaterial
-          color={color}
-          transparent
-          opacity={hovered ? 0.4 : 0.22}
-          depthWrite={false}
-        />
-      </mesh>
+      {/* Scaled group — pin geometry only */}
+      <group ref={groupRef}>
+        {/* Outer glow ring */}
+        <mesh renderOrder={2}>
+          <sphereGeometry args={[baseSize * 1.6, 10, 10]} />
+          <meshBasicMaterial
+            color={color}
+            transparent
+            opacity={hovered ? 0.4 : 0.22}
+            depthWrite={false}
+          />
+        </mesh>
 
-      {/* Pin sphere */}
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: R3F mesh */}
-      <mesh
-        ref={meshRef}
-        scale={[scale, scale, scale]}
-        onClick={(e) => {
-          e.stopPropagation();
-          onClick(item);
-        }}
-        onPointerOver={(e) => {
-          e.stopPropagation();
-          setHovered(true);
-          document.body.style.cursor = "pointer";
-        }}
-        onPointerOut={() => {
-          setHovered(false);
-          document.body.style.cursor = "default";
-        }}
-        renderOrder={3}
-      >
-        <sphereGeometry args={[baseSize, 10, 10]} />
-        <meshBasicMaterial color={color} />
-      </mesh>
+        {/* Pin sphere */}
+        {/* biome-ignore lint/a11y/useKeyWithClickEvents: R3F mesh */}
+        <mesh
+          ref={meshRef}
+          onClick={(e) => {
+            e.stopPropagation();
+            onClick(item);
+          }}
+          onPointerOver={(e) => {
+            e.stopPropagation();
+            setHovered(true);
+            document.body.style.cursor = "pointer";
+          }}
+          onPointerOut={() => {
+            setHovered(false);
+            document.body.style.cursor = "default";
+          }}
+          renderOrder={3}
+        >
+          <sphereGeometry args={[baseSize, 10, 10]} />
+          <meshBasicMaterial color={color} />
+        </mesh>
+      </group>
 
-      {/* Hover label */}
+      {/*
+        Hover label:
+        - distanceFactor={10} makes R3F scale the HTML down as camera is far,
+          which we deliberately UNDO with an inline font-size that scales up
+          proportionally, resulting in constant apparent text size on screen.
+        - We compute compensation so: apparentSize = htmlSize / (dist / 10)
+          => we set fontSize = BASE_PX * (dist / 10) so they cancel out.
+      */}
       {hovered && (
         <Html
           center
-          distanceFactor={5}
+          distanceFactor={10}
           style={{ pointerEvents: "none", whiteSpace: "nowrap" }}
-          position={[0, 0.15, 0]}
+          position={[0, baseSize * 10, 0]}
           zIndexRange={[100, 200]}
         >
-          <div
-            style={{
-              background: tooltipBg,
-              color: "#fff",
-              padding: "4px 9px",
-              borderRadius: "5px",
-              fontSize: "0.65rem",
-              fontWeight: 700,
-              fontFamily: "'Plus Jakarta Sans', sans-serif",
-              maxWidth: "220px",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              boxShadow: "0 2px 12px rgba(0,0,0,0.6)",
-              border: "1px solid rgba(255,255,255,0.15)",
-            }}
-          >
-            {labelContent}
-          </div>
+          <LabelContent
+            text={labelContent}
+            bg={tooltipBg}
+            camDistRef={camDistRef}
+          />
         </Html>
       )}
     </group>
+  );
+}
+
+// Separate component so it can read camDistRef reactively via its own frame loop
+function LabelContent({
+  text,
+  bg,
+  camDistRef,
+}: {
+  text: string;
+  bg: string;
+  camDistRef: React.MutableRefObject<number>;
+}) {
+  const labelRef = useRef<HTMLDivElement>(null);
+
+  // Adjust font size every frame so apparent size stays constant at ~11px
+  // distanceFactor=10 means Three scales the Html element by factor (10 / dist),
+  // so to compensate we multiply our desired px by (dist / 10).
+  useFrame(() => {
+    if (!labelRef.current) return;
+    const dist = camDistRef.current;
+    // Target apparent size: 11px at any zoom level
+    const compensatedPx = Math.round(11 * (dist / 10));
+    // Clamp so it doesn't get too tiny or huge during transitions
+    const clamped = Math.max(8, Math.min(28, compensatedPx));
+    labelRef.current.style.fontSize = `${clamped}px`;
+  });
+
+  return (
+    <div
+      ref={labelRef}
+      style={{
+        background: bg,
+        color: "#fff",
+        padding: "4px 9px",
+        borderRadius: "5px",
+        fontSize: "11px",
+        fontWeight: 700,
+        fontFamily: "'Plus Jakarta Sans', sans-serif",
+        maxWidth: "220px",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+        boxShadow: "0 2px 12px rgba(0,0,0,0.6)",
+        border: "1px solid rgba(255,255,255,0.15)",
+      }}
+    >
+      {text}
+    </div>
   );
 }

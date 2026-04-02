@@ -4,14 +4,15 @@ import { useCallback, useMemo, useState } from "react";
 import type { NewsItem } from "./backend.d";
 import { GlobeScene } from "./components/GlobeScene";
 import { Header } from "./components/Header";
+import { MarketPrices } from "./components/MarketPrices";
 import { NewsPanel } from "./components/NewsPanel";
+import { NewsTicker } from "./components/NewsTicker";
 import { PinOverlay } from "./components/PinOverlay";
 import { useEarthquakes } from "./hooks/useEarthquakes";
 import { useNews } from "./hooks/useNews";
-import { LIVESTREAMS } from "./types";
-import type { EarthquakeItem, StreamItem } from "./types";
+import type { EarthquakeItem } from "./types";
 
-type SelectedItem = NewsItem | StreamItem | EarthquakeItem | null;
+type SelectedItem = NewsItem | EarthquakeItem | null;
 
 export default function App() {
   const [selectedItem, setSelectedItem] = useState<SelectedItem>(null);
@@ -20,12 +21,9 @@ export default function App() {
   const { news, isLoading, lastUpdated, refresh } = useNews();
   const { earthquakes } = useEarthquakes();
 
-  const handlePinClick = useCallback(
-    (item: NewsItem | StreamItem | EarthquakeItem) => {
-      setSelectedItem(item);
-    },
-    [],
-  );
+  const handlePinClick = useCallback((item: NewsItem | EarthquakeItem) => {
+    setSelectedItem(item);
+  }, []);
 
   const handleClose = useCallback(() => setSelectedItem(null), []);
 
@@ -40,8 +38,6 @@ export default function App() {
         item.country.toLowerCase().includes(q),
     );
   }, [news, searchQuery]);
-
-  const displayStreams = LIVESTREAMS;
 
   // Format last updated time
   const lastUpdatedDisplay = lastUpdated
@@ -85,7 +81,6 @@ export default function App() {
               >
                 <GlobeScene
                   newsItems={displayArticles}
-                  streams={displayStreams}
                   earthquakes={earthquakes}
                   onPinClick={handlePinClick}
                 />
@@ -103,13 +98,6 @@ export default function App() {
                   style={{ background: "#FF3B3B" }}
                 />
                 News ({displayArticles.length} pinned)
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span
-                  className="w-2.5 h-2.5 rounded-full"
-                  style={{ background: "#2F7BFF" }}
-                />
-                Live Streams ({displayStreams.length})
               </span>
               <span className="flex items-center gap-1">
                 {/* Earthquake magnitude color scale */}
@@ -143,23 +131,32 @@ export default function App() {
                 </span>
               )}
               <span className="hidden sm:inline" style={{ color: "#3A4560" }}>
-                Drag · Scroll to zoom · Click pins
+                Drag · Scroll / ±buttons / Double-click to zoom · Click pins
               </span>
             </div>
           </div>
 
-          {/* News panel (40%) — desktop only */}
+          {/* Right sidebar — Markets + News + Ticker — desktop only */}
           <div
-            className="hidden lg:block shrink-0"
-            style={{ width: "38%", maxWidth: 480, minHeight: 0 }}
+            className="hidden lg:flex flex-col shrink-0"
+            style={{
+              width: "38%",
+              maxWidth: 480,
+              minHeight: 0,
+              height: "min(70vh, 640px)",
+            }}
           >
-            <div className="h-full" style={{ height: "min(70vh, 640px)" }}>
-              <NewsPanel
-                articles={displayArticles}
-                streams={displayStreams}
-                isLoading={isLoading}
-                onItemClick={handlePinClick}
-              />
+            <MarketPrices />
+            <div className="flex-1 min-h-0 flex flex-col">
+              <div className="flex-1 min-h-0">
+                <NewsPanel
+                  articles={displayArticles}
+                  isLoading={isLoading}
+                  onItemClick={handlePinClick}
+                />
+              </div>
+              {/* News ticker in the bottom space */}
+              <NewsTicker articles={displayArticles} />
             </div>
           </div>
         </main>
@@ -168,7 +165,6 @@ export default function App() {
         <div className="lg:hidden" style={{ borderTop: "1px solid #1B2334" }}>
           <NewsPanel
             articles={displayArticles}
-            streams={displayStreams}
             isLoading={isLoading}
             onItemClick={handlePinClick}
           />

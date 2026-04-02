@@ -4,6 +4,7 @@ import type { EarthquakeItem } from "../types";
 const USGS_URL =
   "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson";
 const REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const MIN_MAGNITUDE = 3.0; // hide anything weaker than M3.0
 
 export function useEarthquakes() {
   const [earthquakes, setEarthquakes] = useState<EarthquakeItem[]>([]);
@@ -29,7 +30,9 @@ export function useEarthquakes() {
       )
         .filter(
           (f) =>
-            f.geometry?.coordinates?.length >= 2 && f.properties?.mag != null,
+            f.geometry?.coordinates?.length >= 2 &&
+            f.properties?.mag != null &&
+            (f.properties.mag as number) >= MIN_MAGNITUDE,
         )
         .map((f) => ({
           id: f.id,

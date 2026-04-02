@@ -1,22 +1,40 @@
-import { OrbitControls, Stars, useTexture } from "@react-three/drei";
+import { Html, OrbitControls, Stars, useTexture } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Component, Suspense, useCallback, useRef } from "react";
+import {
+  Component,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { ReactNode } from "react";
 import * as THREE from "three";
 import type { NewsItem } from "../backend.d";
-import type { EarthquakeItem, StreamItem } from "../types";
+import type { EarthquakeItem } from "../types";
 import { NewsPin } from "./NewsPin";
 
-type PinItem = NewsItem | StreamItem | EarthquakeItem;
+type PinItem = NewsItem | EarthquakeItem;
 
-const EARTH_TEXTURE =
+// Progressive texture LODs — swapped based on camera distance
+// Far: 2K (fast load), Mid: 4K, Close: 8K-equivalent (sharpest)
+const EARTH_TEXTURE_FAR =
   "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_atmos_2048.jpg";
+const EARTH_TEXTURE_MID =
+  "https://unpkg.com/three-globe/example/img/earth-day.jpg";
+const EARTH_TEXTURE_CLOSE =
+  "https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-day.jpg";
 const EARTH_BUMP =
   "https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-topology.png";
 const EARTH_CLOUDS =
   "https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-clouds.png";
 
-// ── Error Boundary ────────────────────────────────────────────────────────
+const MIN_DISTANCE = 1.6; // allow zooming close enough to see country-level detail
+const MAX_DISTANCE = 9;
+const ZOOM_STEP = 0.6;
+const ZOOM_LERP = 0.12;
+
+// ── Error Boundary ─────────────────────────────────────────────────────────────
 interface EBState {
   hasError: boolean;
   message: string;
@@ -67,7 +85,7 @@ class GlobeErrorBoundary extends Component<{ children: ReactNode }, EBState> {
   }
 }
 
-// ── Loading placeholder ──────────────────────────────────────────────────────
+// ── Loading placeholder ────────────────────────────────────────────────────────
 function LoadingGlobe() {
   const meshRef = useRef<THREE.Mesh>(null);
   useFrame(() => {
@@ -81,27 +99,87 @@ function LoadingGlobe() {
   );
 }
 
-// ── Earth Core with textures ────────────────────────────────────────────────
+// Distance thresholds for texture LOD switching
+const LOD_FAR_DIST = 5.5; // > 5.5 units away → 2K texture
+const LOD_MID_DIST = 3.2; // 3.2–5.5 → 4K texture
+// < 3.2 → 8K-equivalent texture (sharpest)
+
+// ── Earth Core — progressively swaps to higher-res texture as user zooms in ──
 function EarthCore() {
-  const textures = useTexture([EARTH_TEXTURE, EARTH_BUMP]);
-  const dayMap = textures[0] as THREE.Texture;
-  const bumpMap = textures[1] as THREE.Texture;
+  // Load all three LOD textures + bump map in parallel
+  const textures = useTexture([
+    EARTH_TEXTURE_FAR,
+    EARTH_TEXTURE_MID,
+    EARTH_TEXTURE_CLOSE,
+    EARTH_BUMP,
+  ]);
+  const texFar = textures[0] as THREE.Texture;
+  const texMid = textures[1] as THREE.Texture;
+  const texClose = textures[2] as THREE.Texture;
+  const bumpMap = textures[3] as THREE.Texture;
+
+  // Enable anisotropic filtering on all textures for crisper detail when
+  // viewed at oblique angles (significant improvement when zoomed in)
+  const meshRef = useRef<THREE.Mesh>(null);
+  const { camera, gl } = useThree();
+  const maxAniso = gl.capabilities.getMaxAnisotropy();
+  const currentLodRef = useRef<"far" | "mid" | "close">("far");
+
+  // Apply anisotropy once on mount
+  useEffect(() => {
+    for (const t of [texFar, texMid, texClose]) {
+      t.anisotropy = maxAniso;
+      t.needsUpdate = true;
+    }
+  }, [texFar, texMid, texClose, maxAniso]);
+
+  useFrame(() => {
+    if (!meshRef.current) return;
+    const dist = camera.position.length();
+    const mat = meshRef.current.material as THREE.MeshPhongMaterial;
+
+    // Determine which LOD tier we are in
+    let newLod: "far" | "mid" | "close";
+    if (dist > LOD_FAR_DIST) {
+      newLod = "far";
+    } else if (dist > LOD_MID_DIST) {
+      newLod = "mid";
+    } else {
+      newLod = "close";
+    }
+
+    // Only swap texture when crossing a LOD boundary
+    if (newLod !== currentLodRef.current) {
+      currentLodRef.current = newLod;
+      mat.map =
+        newLod === "far" ? texFar : newLod === "mid" ? texMid : texClose;
+      mat.needsUpdate = true;
+    }
+
+    // Bump scale ramps from 0.05 at far to 0.22 at close for tactile terrain relief
+    const t = Math.max(
+      0,
+      Math.min(1, (MAX_DISTANCE - dist) / (MAX_DISTANCE - MIN_DISTANCE)),
+    );
+    mat.bumpScale = 0.05 + t * 0.17;
+  });
 
   return (
-    <mesh renderOrder={1}>
-      <sphereGeometry args={[2, 64, 64]} />
+    <mesh ref={meshRef} renderOrder={1}>
+      {/* 256 segments when close for smooth curvature at high zoom */}
+      <sphereGeometry args={[2, 256, 256]} />
       <meshPhongMaterial
-        map={dayMap}
+        map={texFar}
         bumpMap={bumpMap}
         bumpScale={0.05}
-        specular={new THREE.Color(0x333333)}
-        shininess={12}
+        specular={new THREE.Color(0x222244)}
+        shininess={18}
       />
     </mesh>
   );
 }
 
-// ── Fallback Earth ────────────────────────────────────────────────────────
+// ── Fallback Earth ─────────────────────────────────────────────────────────────
 function EarthFallback() {
   return (
     <mesh renderOrder={1}>
@@ -111,18 +189,16 @@ function EarthFallback() {
   );
 }
 
-// ── Cloud layer ────────────────────────────────────────────────────────────
+// ── Cloud layer ────────────────────────────────────────────────────────────────
 function CloudLayer() {
   const cloudsRef = useRef<THREE.Mesh>(null);
   const [cloudsMap] = useTexture([EARTH_CLOUDS]);
-
   useFrame(() => {
     if (cloudsRef.current) cloudsRef.current.rotation.y += 0.00008;
   });
-
   return (
     <mesh ref={cloudsRef} renderOrder={2}>
-      <sphereGeometry args={[2.03, 48, 48]} />
+      <sphereGeometry args={[2.03, 64, 64]} />
       <meshPhongMaterial
         map={cloudsMap}
         transparent
@@ -167,7 +243,7 @@ class EarthErrorBoundary extends Component<
   }
 }
 
-// ── Complete Earth mesh ───────────────────────────────────────────────────
+// ── Complete Earth mesh ────────────────────────────────────────────────────────
 function EarthMesh() {
   return (
     <>
@@ -194,7 +270,6 @@ function EarthMesh() {
           depthWrite={false}
         />
       </mesh>
-
       <mesh renderOrder={0}>
         <sphereGeometry args={[2.08, 48, 48]} />
         <meshBasicMaterial
@@ -209,38 +284,67 @@ function EarthMesh() {
   );
 }
 
+// ── Inner canvas scene ─────────────────────────────────────────────────────────
 interface GlobeContentProps {
   newsItems: NewsItem[];
-  streams: StreamItem[];
   earthquakes: EarthquakeItem[];
   onPinClick: (item: PinItem) => void;
+  zoomInRef: React.MutableRefObject<() => void>;
+  zoomOutRef: React.MutableRefObject<() => void>;
 }
 
 function GlobeContent({
   newsItems,
-  streams,
   earthquakes,
   onPinClick,
+  zoomInRef,
+  zoomOutRef,
 }: GlobeContentProps) {
-  const { gl } = useThree();
+  const { gl, camera } = useThree();
   const controlsRef = useRef<any>(null);
+  const targetDistRef = useRef<number>(camera.position.length());
+
+  // Smooth zoom animation
+  useFrame(() => {
+    const currentDist = camera.position.length();
+    const target = targetDistRef.current;
+    if (Math.abs(currentDist - target) > 0.001) {
+      const newDist = currentDist + (target - currentDist) * ZOOM_LERP;
+      camera.position.setLength(newDist);
+      if (controlsRef.current) controlsRef.current.update();
+    }
+  });
+
+  useEffect(() => {
+    zoomInRef.current = () => {
+      const cur = camera.position.length();
+      targetDistRef.current = Math.max(MIN_DISTANCE, cur - ZOOM_STEP);
+    };
+    zoomOutRef.current = () => {
+      const cur = camera.position.length();
+      targetDistRef.current = Math.min(MAX_DISTANCE, cur + ZOOM_STEP);
+    };
+  });
 
   const handleStart = useCallback(() => {
-    if (controlsRef.current) {
-      controlsRef.current.autoRotate = false;
-    }
+    if (controlsRef.current) controlsRef.current.autoRotate = false;
   }, []);
 
   const handleEnd = useCallback(() => {
+    targetDistRef.current = camera.position.length();
     const timer = setTimeout(() => {
-      if (controlsRef.current) {
-        controlsRef.current.autoRotate = true;
-      }
+      if (controlsRef.current) controlsRef.current.autoRotate = true;
     }, 3500);
     return () => clearTimeout(timer);
+  }, [camera]);
+
+  const handleDoubleClick = useCallback(() => {
+    targetDistRef.current = Math.max(
+      MIN_DISTANCE,
+      targetDistRef.current - ZOOM_STEP * 1.5,
+    );
   }, []);
 
-  // Filter out pins at 0,0 (unknown location)
   const validNews = newsItems.filter(
     (a) => !(Math.abs(a.lat) < 0.01 && Math.abs(a.lng) < 0.01),
   );
@@ -259,23 +363,25 @@ function GlobeContent({
 
       <EarthMesh />
 
-      {validNews.slice(0, 100).map((item) => (
+      {validNews.slice(0, 300).map((item) => (
         <NewsPin key={item.id} item={item} onClick={onPinClick} />
-      ))}
-
-      {streams.map((s) => (
-        <NewsPin key={s.id} item={s} onClick={onPinClick} />
       ))}
 
       {earthquakes.map((eq) => (
         <NewsPin key={eq.id} item={eq} onClick={onPinClick} />
       ))}
 
+      {/* Invisible sphere to catch double-click */}
+      <mesh visible={false} onDoubleClick={handleDoubleClick} renderOrder={-1}>
+        <sphereGeometry args={[10, 8, 8]} />
+        <meshBasicMaterial side={THREE.BackSide} />
+      </mesh>
+
       <OrbitControls
         ref={controlsRef}
         enableZoom
-        minDistance={2.5}
-        maxDistance={9}
+        minDistance={MIN_DISTANCE}
+        maxDistance={MAX_DISTANCE}
         autoRotate
         autoRotateSpeed={0.3}
         enablePan={false}
@@ -283,6 +389,8 @@ function GlobeContent({
         onEnd={handleEnd}
         makeDefault
         domElement={gl.domElement}
+        // Smoother scroll zoom
+        zoomSpeed={0.6}
       />
     </>
   );
@@ -290,22 +398,23 @@ function GlobeContent({
 
 interface GlobeSceneProps {
   newsItems: NewsItem[];
-  streams: StreamItem[];
   earthquakes: EarthquakeItem[];
   onPinClick: (item: PinItem) => void;
 }
 
 export function GlobeScene({
   newsItems,
-  streams,
   earthquakes,
   onPinClick,
 }: GlobeSceneProps) {
+  const zoomInRef = useRef<() => void>(() => {});
+  const zoomOutRef = useRef<() => void>(() => {});
+
   return (
     <GlobeErrorBoundary>
       <div
         id="globe-canvas"
-        className="w-full h-full"
+        className="w-full h-full relative"
         data-ocid="globe.canvas_target"
       >
         <Canvas
@@ -316,11 +425,92 @@ export function GlobeScene({
         >
           <GlobeContent
             newsItems={newsItems}
-            streams={streams}
             earthquakes={earthquakes}
             onPinClick={onPinClick}
+            zoomInRef={zoomInRef}
+            zoomOutRef={zoomOutRef}
           />
         </Canvas>
+
+        {/* Zoom buttons */}
+        <div
+          style={{
+            position: "absolute",
+            bottom: "16px",
+            right: "16px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "6px",
+            zIndex: 10,
+          }}
+        >
+          <button
+            type="button"
+            aria-label="Zoom in"
+            onClick={() => zoomInRef.current()}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 8,
+              background: "rgba(11,19,36,0.82)",
+              border: "1px solid #1B2334",
+              color: "#A9B3C7",
+              fontSize: 22,
+              lineHeight: 1,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backdropFilter: "blur(6px)",
+              transition: "background 0.15s, color 0.15s",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background =
+                "rgba(255,59,59,0.18)";
+              (e.currentTarget as HTMLButtonElement).style.color = "#FF3B3B";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background =
+                "rgba(11,19,36,0.82)";
+              (e.currentTarget as HTMLButtonElement).style.color = "#A9B3C7";
+            }}
+          >
+            +
+          </button>
+          <button
+            type="button"
+            aria-label="Zoom out"
+            onClick={() => zoomOutRef.current()}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 8,
+              background: "rgba(11,19,36,0.82)",
+              border: "1px solid #1B2334",
+              color: "#A9B3C7",
+              fontSize: 22,
+              lineHeight: 1,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backdropFilter: "blur(6px)",
+              transition: "background 0.15s, color 0.15s",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background =
+                "rgba(255,59,59,0.18)";
+              (e.currentTarget as HTMLButtonElement).style.color = "#FF3B3B";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background =
+                "rgba(11,19,36,0.82)";
+              (e.currentTarget as HTMLButtonElement).style.color = "#A9B3C7";
+            }}
+          >
+            \u2212
+          </button>
+        </div>
       </div>
     </GlobeErrorBoundary>
   );

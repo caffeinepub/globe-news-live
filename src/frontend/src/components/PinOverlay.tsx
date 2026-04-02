@@ -1,21 +1,10 @@
-import {
-  AlertTriangle,
-  Clock,
-  ExternalLink,
-  MapPin,
-  Radio,
-  X,
-} from "lucide-react";
+import { AlertTriangle, Clock, ExternalLink, MapPin, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect } from "react";
 import type { NewsItem } from "../backend.d";
-import type { EarthquakeItem, StreamItem } from "../types";
+import type { EarthquakeItem } from "../types";
 
-type ModalItem = NewsItem | StreamItem | EarthquakeItem;
-
-function isStream(item: ModalItem): item is StreamItem {
-  return (item as StreamItem).isStream === true;
-}
+type ModalItem = NewsItem | EarthquakeItem;
 
 function isEarthquake(item: ModalItem): item is EarthquakeItem {
   return (item as EarthquakeItem).isEarthquake === true;
@@ -68,9 +57,7 @@ export function PinOverlay({ item, onClose }: PinOverlayProps) {
     return () => document.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  // Determine accent color based on type
   function getAccentGradient(i: ModalItem): string {
-    if (isStream(i)) return "linear-gradient(90deg, #2F7BFF, #5B9BFF)";
     if (isEarthquake(i))
       return `linear-gradient(90deg, ${getMagnitudeColor(i.magnitude)}, #FFB340)`;
     return "linear-gradient(90deg, #FF3B3B, #FF6B6B)";
@@ -122,12 +109,7 @@ export function PinOverlay({ item, onClose }: PinOverlayProps) {
               style={{ borderBottom: "1px solid #1B2334" }}
             >
               <div className="flex items-center gap-2.5">
-                {isStream(item) ? (
-                  <span className="badge-live flex items-center gap-1">
-                    <Radio className="w-2.5 h-2.5" />
-                    LIVE
-                  </span>
-                ) : isEarthquake(item) ? (
+                {isEarthquake(item) ? (
                   <span
                     className="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold"
                     style={{
@@ -148,7 +130,7 @@ export function PinOverlay({ item, onClose }: PinOverlayProps) {
                 >
                   {isEarthquake(item) ? "USGS" : item.source}
                 </span>
-                {!isStream(item) && !isEarthquake(item) && (
+                {!isEarthquake(item) && (
                   <span
                     className="text-xs flex items-center gap-1"
                     style={{ color: "#A9B3C7" }}
@@ -187,30 +169,7 @@ export function PinOverlay({ item, onClose }: PinOverlayProps) {
                 {item.title}
               </h2>
 
-              {isStream(item) ? (
-                <>
-                  <div className="flex items-center gap-2 mb-3">
-                    <MapPin className="w-4 h-4" style={{ color: "#2F7BFF" }} />
-                    <span className="text-sm" style={{ color: "#A9B3C7" }}>
-                      {item.country}
-                    </span>
-                  </div>
-                  <div
-                    className="rounded-xl overflow-hidden"
-                    style={{ background: "#000" }}
-                  >
-                    <div className="relative" style={{ paddingTop: "56.25%" }}>
-                      <iframe
-                        src={`https://www.youtube.com/embed/${item.videoId}?autoplay=1`}
-                        title={item.title}
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                        className="absolute inset-0 w-full h-full"
-                      />
-                    </div>
-                  </div>
-                </>
-              ) : isEarthquake(item) ? (
+              {isEarthquake(item) ? (
                 <>
                   {/* Magnitude display */}
                   <div className="flex items-center gap-4 mb-5">
