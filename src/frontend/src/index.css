@@ -1,0 +1,209 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  src: url("/assets/fonts/PlusJakartaSans.woff2") format("woff2");
+  font-weight: 300 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("/assets/fonts/BricolageGrotesque.woff2") format("woff2");
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    --radius: 0.75rem;
+    /* Deep navy backgrounds */
+    --background: 0.07 0.012 260;
+    --foreground: 0.92 0.012 240;
+    --card: 0.1 0.014 258;
+    --card-foreground: 0.92 0.012 240;
+    --popover: 0.09 0.013 258;
+    --popover-foreground: 0.92 0.012 240;
+    /* Primary: accent blue */
+    --primary: 0.55 0.2 243;
+    --primary-foreground: 0.98 0 0;
+    /* Secondary */
+    --secondary: 0.16 0.016 258;
+    --secondary-foreground: 0.92 0.012 240;
+    /* Muted */
+    --muted: 0.14 0.014 258;
+    --muted-foreground: 0.62 0.018 242;
+    /* Accent: live blue */
+    --accent: 0.55 0.2 243;
+    --accent-foreground: 0.98 0 0;
+    /* Destructive / breaking red */
+    --destructive: 0.55 0.24 25;
+    --destructive-foreground: 0.98 0 0;
+    /* Border */
+    --border: 0.2 0.016 258;
+    --input: 0.2 0.016 258;
+    --ring: 0.55 0.2 243;
+    /* Chart */
+    --chart-1: 0.55 0.24 25;
+    --chart-2: 0.55 0.2 243;
+    --chart-3: 0.65 0.15 160;
+    --chart-4: 0.75 0.12 80;
+    --chart-5: 0.6 0.2 300;
+    /* Sidebar */
+    --sidebar: 0.09 0.013 258;
+    --sidebar-foreground: 0.92 0.012 240;
+    --sidebar-primary: 0.55 0.2 243;
+    --sidebar-primary-foreground: 0.98 0 0;
+    --sidebar-accent: 0.16 0.016 258;
+    --sidebar-accent-foreground: 0.92 0.012 240;
+    --sidebar-border: 0.2 0.016 258;
+    --sidebar-ring: 0.55 0.2 243;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #070a0f;
+  color: oklch(0.92 0.012 240);
+  font-family: "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
+  overflow-x: hidden;
+}
+
+/* App shell */
+.app-bg {
+  background: #070a0f;
+  min-height: 100vh;
+}
+
+.app-container {
+  background: linear-gradient(180deg, #0b1020 0%, #0a0d14 100%);
+  border: 1px solid #1b2334;
+  box-shadow: 0 8px 64px rgba(0, 0, 0, 0.8);
+}
+
+.glass-card {
+  background: rgba(17, 24, 39, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid #1b2334;
+}
+
+.glass-card-hover:hover {
+  background: rgba(22, 30, 48, 0.9);
+  border-color: rgba(47, 123, 255, 0.3);
+}
+
+/* Color utilities */
+.news-red {
+  color: #ff3b3b;
+}
+.live-blue {
+  color: #2f7bff;
+}
+.news-red-bg {
+  background-color: #ff3b3b;
+}
+.live-blue-bg {
+  background-color: #2f7bff;
+}
+
+/* Badge pills */
+.badge-breaking {
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  background: #ff3b3b;
+  color: #fff;
+}
+
+.badge-live {
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  background: #2f7bff;
+  color: #fff;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* Globe canvas */
+#globe-canvas canvas {
+  outline: none;
+}
+
+/* Pin hover labels */
+.globe-callout {
+  white-space: nowrap;
+  font-size: 0.65rem;
+  font-weight: 700;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Pulse animation */
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.4);
+  }
+}
+.animate-pulse-dot {
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+/* Fade in */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+/* Horizontal scroll hide scrollbar */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
