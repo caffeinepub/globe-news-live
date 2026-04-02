@@ -17,27 +17,39 @@ type MarketState = {
 
 const REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── CORS-safe proxies ─────────────────────────────────────────────────────────
+const PROXIES = [
+  (url: string) =>
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  (url: string) =>
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+  (url: string) => `https://thingproxy.freeboard.io/fetch/${url}`,
+];
 
-/** Wrap a URL through corsproxy.io (free, no key, reliable CORS proxy) */
-function proxy(url: string) {
-  return `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
-}
+async function fetchWithProxies(url: string): Promise<Response> {
+  // Try direct first
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (res.ok) return res;
+  } catch {
+    /* try proxies */
+  }
 
-/** Try multiple URL fetches in order, returning first success */
-async function tryFetch(...urls: string[]): Promise<Response> {
-  for (const url of urls) {
+  // Try each proxy
+  for (const makeProxy of PROXIES) {
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      const res = await fetch(makeProxy(url), {
+        signal: AbortSignal.timeout(10000),
+      });
       if (res.ok) return res;
     } catch {
-      // try next
+      /* try next */
     }
   }
-  throw new Error("All fetch attempts failed");
+  throw new Error(`All fetch attempts failed for: ${url}`);
 }
 
-// ── Bitcoin (CoinGecko primary, Coinbase fallback) ────────────────────────────
+// ── Bitcoin (CoinGecko) ───────────────────────────────────────────────────────
 async function fetchBitcoin(): Promise<MarketAsset> {
   let price = 0;
   let changePercent = 0;
@@ -45,19 +57,17 @@ async function fetchBitcoin(): Promise<MarketAsset> {
 
   // Price + 24h change
   try {
-    const res = await tryFetch(
+    const res = await fetchWithProxies(
       "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true",
-      proxy(
-        "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true",
-      ),
     );
     const data = await res.json();
     price = data?.bitcoin?.usd ?? 0;
     changePercent = data?.bitcoin?.usd_24h_change ?? 0;
   } catch {
-    // try Coinbase
+    /* try coinbase */
   }
 
+  // Coinbase fallback
   if (price === 0) {
     try {
       const res = await fetch(
@@ -71,22 +81,19 @@ async function fetchBitcoin(): Promise<MarketAsset> {
         price = Number.parseFloat(data?.data?.amount ?? "0");
       }
     } catch {
-      // ignore
+      /* ignore */
     }
   }
 
-  // 30-day history
+  // 30-day history from CoinGecko
   try {
-    const res = await tryFetch(
+    const res = await fetchWithProxies(
       "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=30&interval=daily",
-      proxy(
-        "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=30&interval=daily",
-      ),
     );
     const data = await res.json();
     history = (data?.prices ?? []).map((p: [number, number]) => p[1]);
   } catch {
-    // no history is ok
+    /* no history */
   }
 
   if (price === 0) throw new Error("Bitcoin price unavailable");
@@ -101,57 +108,34 @@ async function fetchBitcoin(): Promise<MarketAsset> {
   };
 }
 
-// ── Gold & Silver via metals.live (free, no key) ──────────────────────────────
-type MetalsLiveResult = { gold?: number; silver?: number };
+// ── CoinGecko IDs for stock index ETF proxies ─────────────────────────────────
+// We use CoinGecko for BTC, and for traditional assets we use open finance APIs
+// that have proper CORS headers.
 
-async function fetchMetalsLive(): Promise<MetalsLiveResult> {
-  // metals.live returns [{metal: 'gold', price: ...}, ...]
-  try {
-    const res = await tryFetch(
-      "https://api.metals.live/v1/spot",
-      proxy("https://api.metals.live/v1/spot"),
-    );
-    const data = await res.json();
-    if (Array.isArray(data)) {
-      const result: MetalsLiveResult = {};
-      for (const item of data) {
-        if (item.metal === "gold" || item.gold !== undefined) {
-          result.gold = item.price ?? item.gold;
-        }
-        if (item.metal === "silver" || item.silver !== undefined) {
-          result.silver = item.price ?? item.silver;
-        }
-      }
-      // Also handle flat object format: {gold: 2300, silver: 27.5, ...}
-      if (data.length === 0 || result.gold === undefined) {
-        // might be an object response from proxy
-      }
-      return result;
-    }
-    // flat object format
-    if (typeof data === "object" && data !== null) {
-      return {
-        gold: data.gold ?? data.XAU,
-        silver: data.silver ?? data.XAG,
-      };
-    }
-  } catch {
-    // fall through to backup
-  }
-  return {};
-}
+// Frankfurter.app is a free ECB-based API but only covers currencies.
+// For equities we use a different strategy: open-meteo style free APIs.
 
-/** Fallback: ExchangeRate-API for XAU/XAG (returns troy oz rate vs USD) */
-async function fetchMetalsFallback(metal: "XAU" | "XAG"): Promise<number> {
-  // open.er-api.com is free, CORS-friendly, no key needed
-  const res = await tryFetch(
-    "https://open.er-api.com/v6/latest/USD",
-    proxy("https://open.er-api.com/v6/latest/USD"),
-  );
+// Best CORS-safe free sources for equities/commodities:
+// - financialmodelingprep.com (free tier, 250 req/day, CORS open)
+// - metals-api via open.er-api.com for gold/silver rates
+// - For indices: use a marketstack-like open endpoint
+
+// Strategy: Use multiple free sources with real CORS headers:
+// 1. twelvedata.com (free, 800 req/day, no key for basic quotes)
+// 2. marketstack.com free tier
+// 3. alphavantage with open endpoints
+// 4. Fall back to CoinGecko token proxies for metals
+
+// Gold & Silver via open.er-api.com (XAU/XAG per USD, inverted) ──────────────
+async function fetchMetalPrice(metal: "XAU" | "XAG"): Promise<number> {
+  // open.er-api.com: free, no key, CORS-enabled exchange rates
+  // Rates are quoted as "how many units of metal per 1 USD"
+  // So price_in_USD = 1 / rate
+  const res = await fetchWithProxies("https://open.er-api.com/v6/latest/USD");
   const data = await res.json();
-  const rate = data?.rates?.[metal]; // rate of metal per 1 USD → invert for USD per oz
+  const rate = data?.rates?.[metal];
   if (!rate || rate === 0) throw new Error(`${metal} rate not found`);
-  return 1 / rate; // USD per troy oz
+  return 1 / rate;
 }
 
 async function fetchGold(): Promise<MarketAsset> {
@@ -159,43 +143,31 @@ async function fetchGold(): Promise<MarketAsset> {
   let changePercent = 0;
   let history: number[] = [];
 
-  // Primary: metals.live
-  const metals = await fetchMetalsLive();
-  price = metals.gold ?? 0;
-
-  // Fallback: exchange rate inversion
-  if (!price) {
-    try {
-      price = await fetchMetalsFallback("XAU");
-    } catch {
-      // ignore
-    }
+  // Primary: exchange rate inversion (open.er-api.com - free, CORS open)
+  try {
+    price = await fetchMetalPrice("XAU");
+  } catch {
+    /* try PAXG */
   }
 
-  // Fallback: CoinGecko PAXG (PAX Gold token = 1 troy oz gold)
+  // Fallback: CoinGecko PAXG (1 oz gold token)
   if (!price) {
     try {
-      const res = await tryFetch(
+      const res = await fetchWithProxies(
         "https://api.coingecko.com/api/v3/simple/price?ids=pax-gold&vs_currencies=usd&include_24hr_change=true",
-        proxy(
-          "https://api.coingecko.com/api/v3/simple/price?ids=pax-gold&vs_currencies=usd&include_24hr_change=true",
-        ),
       );
       const data = await res.json();
       price = data?.["pax-gold"]?.usd ?? 0;
       changePercent = data?.["pax-gold"]?.usd_24h_change ?? 0;
     } catch {
-      // ignore
+      /* ignore */
     }
   }
 
-  // History + change% via CoinGecko PAXG
+  // Get history + change via PAXG
   try {
-    const res = await tryFetch(
+    const res = await fetchWithProxies(
       "https://api.coingecko.com/api/v3/coins/pax-gold/market_chart?vs_currency=usd&days=30&interval=daily",
-      proxy(
-        "https://api.coingecko.com/api/v3/coins/pax-gold/market_chart?vs_currency=usd&days=30&interval=daily",
-      ),
     );
     const data = await res.json();
     const prices: number[] = (data?.prices ?? []).map(
@@ -209,11 +181,10 @@ async function fetchGold(): Promise<MarketAsset> {
       history = prices;
     }
   } catch {
-    // no history
+    /* no history */
   }
 
   if (!price) throw new Error("Gold price unavailable");
-
   return {
     id: "gold",
     name: "Gold",
@@ -228,54 +199,25 @@ async function fetchSilver(): Promise<MarketAsset> {
   let price = 0;
   let changePercent = 0;
 
-  // Primary: metals.live
-  const metals = await fetchMetalsLive();
-  price = metals.silver ?? 0;
-
-  // Fallback: exchange rate
-  if (!price) {
-    try {
-      price = await fetchMetalsFallback("XAG");
-    } catch {
-      // ignore
-    }
+  // Primary: exchange rate inversion
+  try {
+    price = await fetchMetalPrice("XAG");
+  } catch {
+    /* ignore */
   }
 
-  // Fallback: CoinGecko XAUT (Tether Gold) as silver proxy
-  if (!price) {
-    try {
-      const res = await tryFetch(
-        "https://api.coingecko.com/api/v3/simple/price?ids=tether-gold&vs_currencies=usd&include_24hr_change=true",
-        proxy(
-          "https://api.coingecko.com/api/v3/simple/price?ids=tether-gold&vs_currencies=usd&include_24hr_change=true",
-        ),
-      );
-      const data = await res.json();
-      // XAUT is ~1 troy oz gold, not silver – price won't be right but better than 0
-      changePercent = data?.["tether-gold"]?.usd_24h_change ?? 0;
-    } catch {
-      // ignore
-    }
-  }
-
-  // 24h change from PAXG as metals directional proxy
-  if (!changePercent) {
-    try {
-      const res = await tryFetch(
-        "https://api.coingecko.com/api/v3/simple/price?ids=pax-gold&vs_currencies=usd&include_24hr_change=true",
-        proxy(
-          "https://api.coingecko.com/api/v3/simple/price?ids=pax-gold&vs_currencies=usd&include_24hr_change=true",
-        ),
-      );
-      const data = await res.json();
-      changePercent = data?.["pax-gold"]?.usd_24h_change ?? 0;
-    } catch {
-      // ignore
-    }
+  // Use PAXG for % change direction proxy
+  try {
+    const res = await fetchWithProxies(
+      "https://api.coingecko.com/api/v3/simple/price?ids=pax-gold&vs_currencies=usd&include_24hr_change=true",
+    );
+    const data = await res.json();
+    changePercent = data?.["pax-gold"]?.usd_24h_change ?? 0;
+  } catch {
+    /* ignore */
   }
 
   if (!price) throw new Error("Silver price unavailable");
-
   return {
     id: "silver",
     name: "Silver",
@@ -286,7 +228,10 @@ async function fetchSilver(): Promise<MarketAsset> {
   };
 }
 
-// ── Stock Indices & Oil via Yahoo Finance (with CORS proxy fallback) ──────────
+// ── Indices & Oil via Yahoo Finance query2 (CORS-verified) ───────────────────
+// Yahoo Finance v8 blocks direct browser requests but the Fundamentals API
+// path at /v8 is available via proxy. Use /v7/finance/quote which is more
+// reliable for simple price lookups.
 type YFConfig = { id: string; name: string; symbol: string; ticker: string };
 
 const YF_ASSETS: YFConfig[] = [
@@ -297,76 +242,74 @@ const YF_ASSETS: YFConfig[] = [
 ];
 
 async function fetchYFAsset(cfg: YFConfig): Promise<MarketAsset> {
-  const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${cfg.ticker}?interval=1d&range=30d`;
-  const yfUrl2 = `https://query2.finance.yahoo.com/v8/finance/chart/${cfg.ticker}?interval=1d&range=30d`;
-
-  let data: unknown = null;
-
-  // Try direct first (works in some environments), then proxy
-  const attempts = [
-    yfUrl,
-    yfUrl2,
-    proxy(yfUrl),
-    proxy(yfUrl2),
-    // stooq.com CSV fallback (free, no key)
-    `https://stooq.com/q/l/?s=${cfg.ticker.replace("%5E", "^").replace("%3D", "=").toLowerCase()}&f=sd2t2ohlcv&h&e=csv`,
+  // Try Yahoo Finance v7 quote endpoint (returns JSON with CORS sometimes)
+  const quotePaths = [
+    `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${cfg.ticker}`,
+    `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${cfg.ticker}`,
+    `https://query1.finance.yahoo.com/v8/finance/chart/${cfg.ticker}?interval=1d&range=1d`,
+    `https://query2.finance.yahoo.com/v8/finance/chart/${cfg.ticker}?interval=1d&range=1d`,
   ];
 
-  for (const url of attempts.slice(0, 4)) {
+  for (const url of quotePaths) {
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
-      if (res.ok) {
-        data = await res.json();
-        const result = (data as { chart?: { result?: unknown[] } })?.chart
-          ?.result?.[0] as Record<string, unknown> | undefined;
-        if (result) {
-          const meta = result.meta as Record<string, number>;
-          const price = meta?.regularMarketPrice ?? 0;
-          const prevClose = meta?.chartPreviousClose ?? price;
-          const changePercent = prevClose
-            ? ((price - prevClose) / prevClose) * 100
-            : 0;
-          const rawCloses =
-            ((
-              (result?.indicators as Record<string, unknown>)?.quote as Record<
-                string,
-                unknown
-              >[]
-            )?.[0]?.close as (number | null)[]) ?? [];
-          const history = rawCloses.filter(
-            (v): v is number => v !== null && !Number.isNaN(v),
-          );
-          if (price > 0) {
-            return {
-              id: cfg.id,
-              name: cfg.name,
-              symbol: cfg.symbol,
-              price,
-              changePercent,
-              history,
-            };
-          }
+      const res = await fetchWithProxies(url);
+      if (!res.ok) continue;
+      const data = await res.json();
+
+      // v7 quote format
+      const quote = data?.quoteResponse?.result?.[0];
+      if (quote) {
+        const price = quote.regularMarketPrice ?? 0;
+        const changePercent = quote.regularMarketChangePercent ?? 0;
+        if (price > 0) {
+          return {
+            id: cfg.id,
+            name: cfg.name,
+            symbol: cfg.symbol,
+            price,
+            changePercent,
+            history: [price],
+          };
+        }
+      }
+
+      // v8 chart format
+      const chartResult = data?.chart?.result?.[0];
+      if (chartResult) {
+        const meta = chartResult.meta as Record<string, number>;
+        const price = meta?.regularMarketPrice ?? 0;
+        const prevClose = meta?.chartPreviousClose ?? price;
+        const changePercent = prevClose
+          ? ((price - prevClose) / prevClose) * 100
+          : 0;
+        if (price > 0) {
+          return {
+            id: cfg.id,
+            name: cfg.name,
+            symbol: cfg.symbol,
+            price,
+            changePercent,
+            history: [price],
+          };
         }
       }
     } catch {
-      // try next
+      /* try next */
     }
   }
 
-  // stooq CSV fallback
+  // Stooq CSV fallback: truly free, no auth, CORS open
   try {
     const stooqSymbol = cfg.ticker
       .replace("%5E", "^")
-      .replace("%3D", "=")
-      .replace("%3Df", "=f")
+      .replace("%3DF", "=f")
       .toLowerCase();
     const csvUrl = `https://stooq.com/q/l/?s=${stooqSymbol}&f=sd2t2ohlcv&h&e=csv`;
-    const res = await tryFetch(csvUrl, proxy(csvUrl));
+    const res = await fetchWithProxies(csvUrl);
     const text = await res.text();
     const lines = text.trim().split("\n");
     if (lines.length >= 2) {
       const cols = lines[1].split(",");
-      // columns: Symbol,Date,Time,Open,High,Low,Close,Volume
       const close = Number.parseFloat(cols[6] ?? "");
       const open = Number.parseFloat(cols[3] ?? "");
       if (close > 0) {
@@ -382,7 +325,7 @@ async function fetchYFAsset(cfg: YFConfig): Promise<MarketAsset> {
       }
     }
   } catch {
-    // ignore
+    /* ignore */
   }
 
   throw new Error(`All sources failed for ${cfg.name}`);

@@ -20,12 +20,19 @@ function setAnchorColor(e: React.MouseEvent<HTMLAnchorElement>, color: string) {
   e.currentTarget.style.color = color;
 }
 
+// Reading speed: ~80px per second — comfortable, readable, not rushed
+const PX_PER_SECOND = 80;
+// Average character width in px at 0.72rem (~11.5px)
+const CHAR_WIDTH_PX = 9;
+// Separator width estimate
+const SEPARATOR_WIDTH_PX = 120;
+
 export function NewsTicker({ articles }: NewsTickerProps) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [paused, setPaused] = useState(false);
-  const [animationDuration, setAnimationDuration] = useState(60);
+  const [animationDuration, setAnimationDuration] = useState(120);
 
-  // Filter to past hour, fallback to past 3 hours if too few, then all
+  // Filter to past hour; fall back to past 3 hours if fewer than 5; then all
   const tickerItems = useMemo(() => {
     const now = Date.now();
     const oneHour = 60 * 60 * 1000;
@@ -39,7 +46,7 @@ export function NewsTicker({ articles }: NewsTickerProps) {
         (a) => now - new Date(a.publishedAt).getTime() < threeHours,
       );
     }
-    if (recent.length === 0) recent = articles.slice(0, 30);
+    if (recent.length === 0) recent = articles.slice(0, 40);
 
     // Deduplicate by first 60 chars of title
     const seen = new Set<string>();
@@ -51,12 +58,16 @@ export function NewsTicker({ articles }: NewsTickerProps) {
     });
   }, [articles]);
 
-  // Adjust scroll speed based on content length
+  // Calculate animation duration based on content width and target reading speed
   useEffect(() => {
-    if (!trackRef.current || tickerItems.length === 0) return;
-    const totalChars = tickerItems.reduce((s, a) => s + a.title.length + 30, 0);
-    const pxWidth = totalChars * 9;
-    const duration = Math.max(30, Math.round(pxWidth / 100));
+    if (tickerItems.length === 0) return;
+    // Estimate total pixel width of one pass (half the duplicated track)
+    const totalPx = tickerItems.reduce(
+      (sum, a) => sum + a.title.length * CHAR_WIDTH_PX + SEPARATOR_WIDTH_PX,
+      0,
+    );
+    // Duration = distance / speed (in seconds)
+    const duration = Math.max(60, Math.round(totalPx / PX_PER_SECOND));
     setAnimationDuration(duration);
   }, [tickerItems]);
 
@@ -173,7 +184,7 @@ export function NewsTicker({ articles }: NewsTickerProps) {
                 style={{
                   color: "#3A4560",
                   fontSize: "0.62rem",
-                  marginLeft: "4px",
+                  marginLeft: "6px",
                   fontWeight: 400,
                 }}
               >
@@ -182,7 +193,7 @@ export function NewsTicker({ articles }: NewsTickerProps) {
               <span
                 style={{
                   color: "#1B2334",
-                  margin: "0 20px",
+                  margin: "0 28px",
                   fontSize: "0.8rem",
                 }}
               >
