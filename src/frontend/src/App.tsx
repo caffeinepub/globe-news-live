@@ -87,13 +87,16 @@ export default function App() {
         />
 
         {/* Main content row */}
-        <main className="flex flex-1 min-h-0" style={{ minHeight: "600px" }}>
+        <main
+          className="flex flex-1 min-h-0"
+          style={{ minHeight: "600px", alignItems: "stretch" }}
+        >
           {/* Globe column */}
           <div
             className="relative flex-1 flex flex-col"
             style={{ minWidth: 0 }}
           >
-            <div className="flex-1" style={{ minHeight: "min(70vh, 640px)" }}>
+            <div className="flex-1" style={{ minHeight: "min(75vh, 700px)" }}>
               <motion.div
                 className="w-full h-full"
                 initial={{ opacity: 0 }}
@@ -112,7 +115,7 @@ export default function App() {
 
             {/* Pin legend */}
             <div
-              className="flex flex-wrap justify-center gap-4 py-3 text-xs"
+              className="flex flex-wrap justify-center gap-4 py-2.5 text-xs"
               style={{ borderTop: "1px solid #1B2334", color: "#A9B3C7" }}
             >
               <span className="flex items-center gap-1.5">
@@ -174,28 +177,32 @@ export default function App() {
             </div>
           </div>
 
-          {/* Right sidebar — Markets + Space Weather + News + Ticker — desktop only */}
+          {/* Right sidebar — Markets + Ticker + Space Weather + News — desktop only */}
           <div
             className="hidden lg:flex flex-col shrink-0"
             style={{
-              width: "38%",
-              maxWidth: 480,
+              width: "36%",
+              maxWidth: 460,
               minHeight: 0,
-              height: "min(70vh, 640px)",
+              alignSelf: "stretch",
             }}
           >
+            {/* Markets — compact, fixed height */}
             <MarketPrices />
+
+            {/* News ticker — sits directly below Markets */}
+            <NewsTicker articles={displayArticles} />
+
+            {/* Space weather — single row */}
             <SpaceWeatherWidget data={spaceWeather} />
-            <div className="flex-1 min-h-0 flex flex-col">
-              <div className="flex-1 min-h-0">
-                <NewsPanel
-                  articles={displayArticles}
-                  isLoading={isLoading}
-                  onItemClick={(item) => handlePinClick(item as PinItem)}
-                />
-              </div>
-              {/* News ticker */}
-              <NewsTicker articles={displayArticles} />
+
+            {/* News panel fills all remaining space */}
+            <div className="flex-1 min-h-0">
+              <NewsPanel
+                articles={displayArticles}
+                isLoading={isLoading}
+                onItemClick={(item) => handlePinClick(item as PinItem)}
+              />
             </div>
           </div>
         </main>
@@ -211,7 +218,7 @@ export default function App() {
 
         {/* Footer */}
         <footer
-          className="py-5 px-4"
+          className="py-4 px-4"
           style={{ borderTop: "1px solid #1B2334", background: "#0C1222" }}
         >
           <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">

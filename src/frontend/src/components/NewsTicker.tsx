@@ -16,21 +16,13 @@ function relativeTime(iso: string): string {
   }
 }
 
-function setAnchorColor(e: React.MouseEvent<HTMLAnchorElement>, color: string) {
-  e.currentTarget.style.color = color;
-}
-
-// Reading speed: ~80px per second — comfortable, readable
-const PX_PER_SECOND = 80;
-// Average character width in px at 0.72rem (~11.5px)
-const CHAR_WIDTH_PX = 9;
-// Separator width estimate
-const SEPARATOR_WIDTH_PX = 120;
+// Reading speed: ~60px per second — comfortable, readable
+const PX_PER_SECOND = 60;
 
 export function NewsTicker({ articles }: NewsTickerProps) {
-  const trackRef = useRef<HTMLDivElement>(null);
   const [paused, setPaused] = useState(false);
-  const [animationDuration, setAnimationDuration] = useState(120);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [trackWidth, setTrackWidth] = useState(0);
 
   // Filter to past hour; fall back to past 3 hours if fewer than 5; then all
   const tickerItems = useMemo(() => {
@@ -58,24 +50,28 @@ export function NewsTicker({ articles }: NewsTickerProps) {
     });
   }, [articles]);
 
-  // Calculate animation duration based on content width and target reading speed
+  // Measure actual rendered track width for accurate animation duration
   useEffect(() => {
-    if (tickerItems.length === 0) return;
-    // Estimate total pixel width of one pass (half the duplicated track)
-    const totalPx = tickerItems.reduce(
-      (sum, a) => sum + a.title.length * CHAR_WIDTH_PX + SEPARATOR_WIDTH_PX,
-      0,
-    );
-    // Duration = distance / speed (in seconds)
-    const duration = Math.max(60, Math.round(totalPx / PX_PER_SECOND));
-    setAnimationDuration(duration);
-  }, [tickerItems]);
+    if (!trackRef.current) return;
+    // Use ResizeObserver to get the real width of one set of items
+    const observer = new ResizeObserver(() => {
+      if (trackRef.current) {
+        // The track contains 2 copies; half width = one copy
+        setTrackWidth(trackRef.current.scrollWidth / 2);
+      }
+    });
+    observer.observe(trackRef.current);
+    return () => observer.disconnect();
+  }, []); // ResizeObserver watches the DOM element directly
+
+  // Duration based on actual measured width
+  const animationDuration =
+    trackWidth > 0 ? Math.max(30, Math.round(trackWidth / PX_PER_SECOND)) : 120;
 
   if (tickerItems.length === 0) return null;
 
   return (
     <div
-      className="news-ticker-container"
       style={{
         background: "#0A0D14",
         borderTop: "1px solid #1B2334",
@@ -84,7 +80,8 @@ export function NewsTicker({ articles }: NewsTickerProps) {
         position: "relative",
         display: "flex",
         alignItems: "center",
-        height: "36px",
+        height: "34px",
+        flexShrink: 0,
       }}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
@@ -92,23 +89,35 @@ export function NewsTicker({ articles }: NewsTickerProps) {
     >
       {/* LIVE label */}
       <div
-        className="shrink-0 flex items-center gap-1.5 px-3"
         style={{
           background: "#0F172A",
           borderRight: "1px solid #1B2334",
           height: "100%",
           zIndex: 2,
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+          padding: "0 10px",
+          flexShrink: 0,
         }}
       >
         <span
-          className="w-1.5 h-1.5 rounded-full animate-pulse-dot"
-          style={{ background: "#FF3B3B" }}
+          className="animate-pulse-dot"
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            background: "#FF3B3B",
+            display: "inline-block",
+          }}
         />
         <span
-          className="text-xs font-black tracking-widest uppercase"
           style={{
+            fontWeight: 900,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
             color: "#FF3B3B",
-            fontSize: "0.6rem",
+            fontSize: "0.58rem",
             whiteSpace: "nowrap",
           }}
         >
@@ -120,10 +129,10 @@ export function NewsTicker({ articles }: NewsTickerProps) {
       <div
         style={{
           position: "absolute",
-          left: "66px",
+          left: "60px",
           top: 0,
           bottom: 0,
-          width: "30px",
+          width: "24px",
           background: "linear-gradient(to right, #0A0D14, transparent)",
           zIndex: 1,
           pointerEvents: "none",
@@ -135,7 +144,7 @@ export function NewsTicker({ articles }: NewsTickerProps) {
           right: 0,
           top: 0,
           bottom: 0,
-          width: "40px",
+          width: "32px",
           background: "linear-gradient(to left, #0A0D14, transparent)",
           zIndex: 1,
           pointerEvents: "none",
@@ -153,24 +162,30 @@ export function NewsTicker({ articles }: NewsTickerProps) {
       >
         <div
           ref={trackRef}
-          className="ticker-track"
           style={{
-            display: "flex",
+            display: "inline-flex",
             alignItems: "center",
             height: "100%",
             whiteSpace: "nowrap",
-            // BUG FIX: must include animationName so the browser applies
-            // the @keyframes ticker-scroll defined in index.css
+            // Use CSS animation with keyframes defined in index.css
             animationName: "ticker-scroll",
+            animationDuration: `${animationDuration}s`,
             animationTimingFunction: "linear",
             animationIterationCount: "infinite",
-            animationDuration: `${animationDuration}s`,
             animationPlayState: paused ? "paused" : "running",
+            willChange: "transform",
           }}
         >
-          {/* Duplicate items for seamless loop */}
+          {/* Duplicate items x2 for seamless loop — translateX(-50%) returns to start */}
           {[...tickerItems, ...tickerItems].map((item, idx) => (
-            <span key={`${item.id}-t${idx}`} className="ticker-item">
+            <span
+              key={`${item.id}-${idx}`}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "0 4px",
+              }}
+            >
               <a
                 href={item.url}
                 target="_blank"
@@ -179,20 +194,24 @@ export function NewsTicker({ articles }: NewsTickerProps) {
                 style={{
                   color: "#E9EEF7",
                   textDecoration: "none",
-                  fontSize: "0.72rem",
+                  fontSize: "0.7rem",
                   fontWeight: 600,
                   letterSpacing: "0.01em",
                   transition: "color 0.15s",
                 }}
-                onMouseEnter={(e) => setAnchorColor(e, "#60A5FA")}
-                onMouseLeave={(e) => setAnchorColor(e, "#E9EEF7")}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = "#60A5FA";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = "#E9EEF7";
+                }}
               >
                 {item.title}
               </a>
               <span
                 style={{
                   color: "#3A4560",
-                  fontSize: "0.62rem",
+                  fontSize: "0.6rem",
                   marginLeft: "6px",
                   fontWeight: 400,
                 }}
@@ -202,8 +221,8 @@ export function NewsTicker({ articles }: NewsTickerProps) {
               <span
                 style={{
                   color: "#1B2334",
-                  margin: "0 28px",
-                  fontSize: "0.8rem",
+                  margin: "0 24px",
+                  fontSize: "0.75rem",
                 }}
               >
                 ◆

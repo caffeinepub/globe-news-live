@@ -5,27 +5,30 @@ import type { MarketAsset } from "../hooks/useMarketPrices";
 import { useMarketPrices } from "../hooks/useMarketPrices";
 
 function formatPrice(asset: MarketAsset): string {
-  if (asset.id === "bitcoin") {
-    return `$${Math.round(asset.price).toLocaleString("en-US")}`;
+  const { id, price } = asset;
+  if (id === "bitcoin" || id === "ethereum") {
+    return `$${Math.round(price).toLocaleString("en-US")}`;
   }
-  if (asset.id === "sp500" || asset.id === "nasdaq" || asset.id === "dow") {
-    return asset.price.toLocaleString("en-US", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+  if (id === "sp500" || id === "nasdaq" || id === "dow") {
+    return price.toLocaleString("en-US", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
     });
   }
-  return `$${asset.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (id === "oil") {
+    return `$${price.toFixed(2)}`;
+  }
+  return `$${price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function ChangeBadge({ pct }: { pct: number }) {
   const isPos = pct >= 0;
-  const bg = isPos ? "rgba(0,200,80,0.15)" : "rgba(255,59,59,0.15)";
   const color = isPos ? "#00C853" : "#FF3B3B";
   const arrow = isPos ? "▲" : "▼";
   return (
     <span
-      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-bold tabular-nums"
-      style={{ background: bg, color, fontSize: "0.65rem", lineHeight: 1 }}
+      className="tabular-nums"
+      style={{ color, fontSize: "0.6rem", fontWeight: 700, lineHeight: 1 }}
     >
       {arrow} {Math.abs(pct).toFixed(2)}%
     </span>
@@ -45,18 +48,18 @@ function MiniChart({
       initial={{ opacity: 0, height: 0 }}
       animate={{ opacity: 1, height: "auto" }}
       exit={{ opacity: 0, height: 0 }}
-      transition={{ duration: 0.22 }}
-      style={{ overflow: "hidden" }}
+      transition={{ duration: 0.2 }}
+      style={{ overflow: "hidden", gridColumn: "1 / -1" }}
     >
       <div
-        className="px-3 pb-3 pt-1"
+        className="px-3 pb-2 pt-1"
         style={{ borderTop: "1px solid #1B2334" }}
       >
         <div className="flex items-center justify-between mb-1">
           <span
             style={{
               color: "#A9B3C7",
-              fontSize: "0.6rem",
+              fontSize: "0.58rem",
               letterSpacing: "0.05em",
             }}
           >
@@ -65,7 +68,7 @@ function MiniChart({
           <button
             type="button"
             onClick={onClose}
-            style={{ color: "#3A4560", fontSize: "0.7rem", lineHeight: 1 }}
+            style={{ color: "#3A4560", fontSize: "0.65rem", lineHeight: 1 }}
             className="hover:opacity-70 transition-opacity"
             aria-label="Close chart"
           >
@@ -73,7 +76,7 @@ function MiniChart({
           </button>
         </div>
         {data.length > 1 ? (
-          <ResponsiveContainer width="100%" height={60}>
+          <ResponsiveContainer width="100%" height={52}>
             <AreaChart
               data={data}
               margin={{ top: 2, right: 2, bottom: 2, left: 2 }}
@@ -96,14 +99,12 @@ function MiniChart({
                   background: "#0F172A",
                   border: "1px solid #1B2334",
                   borderRadius: 4,
-                  fontSize: "0.65rem",
+                  fontSize: "0.6rem",
                   color: "#E9EEF7",
                   padding: "2px 6px",
                 }}
                 formatter={(val: number) => [
-                  asset.id === "bitcoin"
-                    ? `$${Math.round(val).toLocaleString()}`
-                    : `$${val.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                  `$${val.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
                   "",
                 ]}
                 labelFormatter={() => ""}
@@ -122,13 +123,65 @@ function MiniChart({
         ) : (
           <div
             className="flex items-center justify-center"
-            style={{ height: 60, color: "#3A4560", fontSize: "0.65rem" }}
+            style={{ height: 52, color: "#3A4560", fontSize: "0.6rem" }}
           >
             Chart data unavailable
           </div>
         )}
       </div>
     </motion.div>
+  );
+}
+
+function AssetCell({
+  asset,
+  isExpanded,
+  onToggle,
+}: {
+  asset: MarketAsset;
+  isExpanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <motion.button
+      type="button"
+      className="text-left transition-colors rounded"
+      style={{
+        background: isExpanded ? "rgba(255,255,255,0.04)" : "transparent",
+        padding: "5px 7px",
+        cursor: "pointer",
+        border: "1px solid transparent",
+        width: "100%",
+      }}
+      whileHover={{ backgroundColor: "rgba(255,255,255,0.04)" }}
+      onClick={onToggle}
+      title={`${asset.name} — tap for chart`}
+    >
+      <div className="flex items-center justify-between gap-1">
+        <div className="min-w-0">
+          <div
+            className="font-bold truncate"
+            style={{ color: "#E9EEF7", fontSize: "0.7rem", lineHeight: 1.2 }}
+          >
+            {asset.name}
+          </div>
+          <div
+            style={{ color: "#3A4560", fontSize: "0.58rem", lineHeight: 1.2 }}
+          >
+            {asset.symbol}
+          </div>
+        </div>
+        <div className="text-right shrink-0">
+          <div
+            className="font-bold tabular-nums"
+            style={{ color: "#E9EEF7", fontSize: "0.7rem", lineHeight: 1.2 }}
+          >
+            {formatPrice(asset)}
+          </div>
+          <ChangeBadge pct={asset.changePercent} />
+        </div>
+      </div>
+    </motion.button>
   );
 }
 
@@ -146,6 +199,8 @@ export function MarketPrices() {
   const toggleChart = (id: string) =>
     setExpandedId((prev) => (prev === id ? null : id));
 
+  const expandedAsset = assets.find((a) => a.id === expandedId) ?? null;
+
   return (
     <div
       className="shrink-0"
@@ -158,69 +213,53 @@ export function MarketPrices() {
     >
       {/* Header */}
       <div
-        className="flex items-center justify-between px-4 py-2.5"
+        className="flex items-center justify-between px-3 py-1.5"
         style={{ borderBottom: "1px solid #1B2334" }}
       >
         <div className="flex items-center gap-2">
           <span
-            className="w-2 h-2 rounded-full animate-pulse-dot"
+            className="w-1.5 h-1.5 rounded-full animate-pulse-dot"
             style={{ background: "#00C853" }}
           />
           <h2
             className="text-xs font-black tracking-[0.15em] uppercase font-display"
-            style={{ color: "#E9EEF7" }}
+            style={{ color: "#E9EEF7", fontSize: "0.65rem" }}
           >
             MARKETS
           </h2>
         </div>
-        <div className="flex items-center gap-3">
-          <span
-            style={{
-              color: "#3A4560",
-              fontSize: "0.58rem",
-              letterSpacing: "0.05em",
-            }}
-          >
-            tap row for chart
-          </span>
-          <span
-            style={{
-              color: "#3A4560",
-              fontSize: "0.6rem",
-              letterSpacing: "0.05em",
-            }}
-          >
-            30m refresh
-          </span>
+        <div className="flex items-center gap-2">
+          {lastUpdatedStr && (
+            <span style={{ color: "#3A4560", fontSize: "0.55rem" }}>
+              {lastUpdatedStr}
+            </span>
+          )}
+          <span style={{ color: "#3A4560", fontSize: "0.55rem" }}>30m</span>
         </div>
       </div>
 
-      {/* Asset rows */}
-      <div className="px-4 py-1">
+      {/* Asset grid — 2 columns */}
+      <div className="px-2 py-1.5">
         {isLoading && assets.length === 0 ? (
-          <div className="space-y-2 py-2" data-ocid="markets.loading_state">
-            {[0, 1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <div
-                    className="h-2.5 rounded"
-                    style={{ background: "#1B2334", width: 64 }}
-                  />
-                  <div
-                    className="h-2 rounded"
-                    style={{ background: "#1B2334", width: 32 }}
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <div
-                    className="h-3 rounded"
-                    style={{ background: "#1B2334", width: 72 }}
-                  />
-                  <div
-                    className="h-4 rounded"
-                    style={{ background: "#1B2334", width: 52 }}
-                  />
-                </div>
+          <div
+            className="grid gap-1"
+            style={{ gridTemplateColumns: "1fr 1fr" }}
+            data-ocid="markets.loading_state"
+          >
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <div
+                key={i}
+                className="rounded p-1.5"
+                style={{ background: "#1B2334" }}
+              >
+                <div
+                  className="h-2 rounded mb-1"
+                  style={{ background: "#243050", width: "60%" }}
+                />
+                <div
+                  className="h-2 rounded"
+                  style={{ background: "#243050", width: "80%" }}
+                />
               </div>
             ))}
           </div>
@@ -228,89 +267,39 @@ export function MarketPrices() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: 0.4 }}
+            transition={{ duration: 0.3 }}
             data-ocid="markets.list"
           >
-            {assets.map((asset, idx) => (
-              <div key={asset.id}>
-                <motion.button
-                  type="button"
-                  className="w-full flex items-center justify-between py-2 text-left hover:opacity-80 transition-opacity"
-                  style={{
-                    borderTop:
-                      idx > 0 ? "1px solid rgba(27,35,52,0.5)" : "none",
-                    cursor: "pointer",
-                    background: "transparent",
-                    border: idx > 0 ? "1px solid transparent" : "none",
-                    borderTopColor:
-                      idx > 0 ? "rgba(27,35,52,0.5)" : "transparent",
-                    borderBottom: "none",
-                    borderLeft: "none",
-                    borderRight: "none",
-                    padding: "8px 0",
-                  }}
-                  initial={{ opacity: 0, y: 4 }}
+            <div
+              className="grid gap-0.5"
+              style={{ gridTemplateColumns: "1fr 1fr" }}
+            >
+              {assets.map((asset, idx) => (
+                <motion.div
+                  key={asset.id}
+                  initial={{ opacity: 0, y: 3 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.06, duration: 0.3 }}
-                  onClick={() => toggleChart(asset.id)}
+                  transition={{ delay: idx * 0.04, duration: 0.25 }}
                   data-ocid={`markets.item.${idx + 1}`}
-                  title={`Click to ${expandedId === asset.id ? "hide" : "show"} ${asset.name} chart`}
                 >
-                  {/* Left: name + symbol */}
-                  <div className="flex flex-col">
-                    <span
-                      className="text-xs font-semibold"
-                      style={{ color: "#E9EEF7", lineHeight: 1.3 }}
-                    >
-                      {asset.name}
-                    </span>
-                    <span
-                      style={{
-                        color: "#A9B3C7",
-                        fontSize: "0.62rem",
-                        lineHeight: 1.2,
-                      }}
-                    >
-                      {asset.symbol}
-                    </span>
-                  </div>
+                  <AssetCell
+                    asset={asset}
+                    isExpanded={expandedId === asset.id}
+                    onToggle={() => toggleChart(asset.id)}
+                  />
+                </motion.div>
+              ))}
+            </div>
 
-                  {/* Right: price + change + chart toggle indicator */}
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="text-xs font-bold tabular-nums"
-                      style={{ color: "#E9EEF7" }}
-                    >
-                      {formatPrice(asset)}
-                    </span>
-                    <ChangeBadge pct={asset.changePercent} />
-                    <span
-                      style={{
-                        color: "#3A4560",
-                        fontSize: "0.6rem",
-                        transform:
-                          expandedId === asset.id
-                            ? "rotate(180deg)"
-                            : "rotate(0deg)",
-                        transition: "transform 0.2s",
-                        display: "inline-block",
-                      }}
-                    >
-                      ▾
-                    </span>
-                  </div>
-                </motion.button>
-
-                <AnimatePresence>
-                  {expandedId === asset.id && (
-                    <MiniChart
-                      asset={asset}
-                      onClose={() => setExpandedId(null)}
-                    />
-                  )}
-                </AnimatePresence>
-              </div>
-            ))}
+            {/* Expanded chart — spans full width below the grid */}
+            <AnimatePresence>
+              {expandedAsset && (
+                <MiniChart
+                  asset={expandedAsset}
+                  onClose={() => setExpandedId(null)}
+                />
+              )}
+            </AnimatePresence>
 
             {assets.length === 0 && (
               <div
@@ -324,20 +313,6 @@ export function MarketPrices() {
           </motion.div>
         )}
       </div>
-
-      {/* Last updated footer */}
-      {lastUpdatedStr && (
-        <div
-          className="px-4 pb-2"
-          style={{
-            color: "#3A4560",
-            fontSize: "0.58rem",
-            letterSpacing: "0.04em",
-          }}
-        >
-          Last updated: {lastUpdatedStr}
-        </div>
-      )}
     </div>
   );
 }

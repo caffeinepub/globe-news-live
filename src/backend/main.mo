@@ -42,6 +42,13 @@ actor {
   let newsItems = Map.empty<Text, NewsItem>();
   var lastUpdated : Int = 0;
 
+  // Cache for market data CSV responses
+  var cachedSP500 : Text = "";
+  var cachedNASDAQ : Text = "";
+  var cachedDow : Text = "";
+  var cachedOil : Text = "";
+  var marketLastUpdated : Int = 0;
+
   func getSourceLocation(source : Text) : SourceLocation {
     for (s in sources.values()) {
       if (source.contains(#text(s.name))) {
@@ -129,5 +136,58 @@ actor {
   public query ({ caller }) func getNextCountry(current : Text) : async Text {
     let countries = ["UK", "Qatar", "USA", "Germany", "France"];
     getNextElement(countries, current);
+  };
+
+  // ── Market Data via HTTP Outcalls (bypasses browser CORS) ──────────────
+  // Fetches CSV data from stooq.com for stock indices and oil.
+  // Returns the raw CSV text for the given symbol.
+  public shared func fetchStooqCSV(symbol : Text) : async Text {
+    let url = "https://stooq.com/q/d/l/?s=" # symbol # "&i=d";
+    let csv = await Outcall.httpGetRequest(
+      url,
+      [],
+      transform,
+    );
+    csv;
+  };
+
+  // Returns cached S&P 500 CSV
+  public query func getCachedSP500() : async Text { cachedSP500 };
+  public query func getCachedNASDAQ() : async Text { cachedNASDAQ };
+  public query func getCachedDow() : async Text { cachedDow };
+  public query func getCachedOil() : async Text { cachedOil };
+  public query func getMarketLastUpdated() : async Int { marketLastUpdated };
+
+  // Refreshes all market data from stooq.com in one call
+  public shared func refreshMarketData() : async () {
+    let sp500 = await Outcall.httpGetRequest(
+      "https://stooq.com/q/d/l/?s=%5Espx&i=d",
+      [],
+      transform,
+    );
+    cachedSP500 := sp500;
+
+    let nasdaq = await Outcall.httpGetRequest(
+      "https://stooq.com/q/d/l/?s=%5Endq&i=d",
+      [],
+      transform,
+    );
+    cachedNASDAQ := nasdaq;
+
+    let dow = await Outcall.httpGetRequest(
+      "https://stooq.com/q/d/l/?s=%5Edji&i=d",
+      [],
+      transform,
+    );
+    cachedDow := dow;
+
+    let oil = await Outcall.httpGetRequest(
+      "https://stooq.com/q/d/l/?s=cl.f&i=d",
+      [],
+      transform,
+    );
+    cachedOil := oil;
+
+    marketLastUpdated := Time.now();
   };
 };

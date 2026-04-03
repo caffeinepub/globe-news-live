@@ -42,4 +42,12 @@ export interface backendInterface {
     getNextCountry(current: string): Promise<string>;
     refreshNews(): Promise<void>;
     transform(input: TransformationInput): Promise<TransformationOutput>;
+    // Market data via ICP http-outcalls (bypasses browser CORS)
+    refreshMarketData(): Promise<void>;
+    fetchStooqCSV(symbol: string): Promise<string>;
+    getCachedSP500(): Promise<string>;
+    getCachedNASDAQ(): Promise<string>;
+    getCachedDow(): Promise<string>;
+    getCachedOil(): Promise<string>;
+    getMarketLastUpdated(): Promise<bigint>;
 }

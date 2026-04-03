@@ -29,9 +29,9 @@ const EARTH_CLOUDS =
 const MIN_DISTANCE = 1.6;
 const MAX_DISTANCE = 9;
 const ZOOM_STEP = 0.6;
-const ZOOM_LERP = 0.12;
+const ZOOM_LERP = 0.1;
 
-// ── Error Boundary ───────────────────────────────────────────────────────────────────
+// ── Error Boundary ──────────────────────────────────────────────────────────────────────────────────
 interface EBState {
   hasError: boolean;
   message: string;
@@ -82,7 +82,7 @@ class GlobeErrorBoundary extends Component<{ children: ReactNode }, EBState> {
   }
 }
 
-// ── Loading placeholder ────────────────────────────────────────────────────────────
+// ── Loading placeholder ───────────────────────────────────────────────────────────────────────────────
 function LoadingGlobe() {
   const meshRef = useRef<THREE.Mesh>(null);
   useFrame(() => {
@@ -99,7 +99,7 @@ function LoadingGlobe() {
 const LOD_FAR_DIST = 5.5;
 const LOD_MID_DIST = 3.2;
 
-// ── Earth Core ────────────────────────────────────────────────────────────────────
+// ── Earth Core ──────────────────────────────────────────────────────────────────────────────────
 function EarthCore() {
   const textures = useTexture([
     EARTH_TEXTURE_FAR,
@@ -268,8 +268,7 @@ function EarthMesh() {
   );
 }
 
-// ── ISS Orbit Ring (decorative orbital path) ──────────────────────────────────
-// Thin torus at ~51.6° inclination to approximate ISS orbit
+// ── ISS Orbit Ring (decorative orbital path) ─────────────────────────────────
 function ISSOrbitRing({ issLat }: { issLat: number | null }) {
   const ringRef = useRef<THREE.Mesh>(null);
   const { camera } = useThree();
@@ -277,12 +276,10 @@ function ISSOrbitRing({ issLat }: { issLat: number | null }) {
   useFrame(() => {
     if (!ringRef.current) return;
     const dist = camera.position.length();
-    // Fade out orbit ring when very close or very far
     const mat = ringRef.current.material as THREE.MeshBasicMaterial;
     mat.opacity = dist < 2.5 ? 0 : dist > 7 ? 0.02 : 0.05;
   });
 
-  // Only show when ISS position is known
   if (issLat === null) return null;
 
   return (
@@ -302,7 +299,7 @@ function ISSOrbitRing({ issLat }: { issLat: number | null }) {
   );
 }
 
-// ── Inner canvas scene ────────────────────────────────────────────────────────────
+// ── Inner canvas scene ─────────────────────────────────────────────────────────────────────
 interface GlobeContentProps {
   newsItems: NewsItem[];
   earthquakes: EarthquakeItem[];
@@ -322,49 +319,112 @@ function GlobeContent({
   zoomInRef,
   zoomOutRef,
 }: GlobeContentProps) {
-  const { gl, camera } = useThree();
+  const { camera } = useThree();
   const controlsRef = useRef<any>(null);
-  const targetDistRef = useRef<number>(camera.position.length());
 
-  useFrame(() => {
-    const currentDist = camera.position.length();
-    const target = targetDistRef.current;
-    if (Math.abs(currentDist - target) > 0.001) {
-      const newDist = currentDist + (target - currentDist) * ZOOM_LERP;
-      camera.position.setLength(newDist);
+  // --------------------------------------------------------------------------
+  // Zoom lerp state — all in refs so no re-renders from the frame loop
+  // lerpActiveRef: true only when a button/dblclick zoom is in progress
+  // targetDistRef: the desired camera distance for that zoom
+  // --------------------------------------------------------------------------
+  const lerpActiveRef = useRef(false);
+  const targetDistRef = useRef(5);
+
+  // Slow gentle rotation ref — we do this ourselves so OrbitControls.autoRotate
+  // is NEVER enabled (it conflicts with damping and causes phantom zooms)
+  const autoRotAngleRef = useRef(0);
+  const isInteractingRef = useRef(false);
+
+  // --------------------------------------------------------------------------
+  // Frame loop
+  // --------------------------------------------------------------------------
+  useFrame((_state, delta) => {
+    // Gentle idle rotation — only when user is not interacting and no lerp
+    if (!isInteractingRef.current && !lerpActiveRef.current) {
+      autoRotAngleRef.current += delta * 0.05; // ~3°/sec
+      camera.position.applyQuaternion(
+        new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(0, 1, 0),
+          delta * 0.05,
+        ),
+      );
+      if (controlsRef.current) controlsRef.current.update();
+    }
+
+    // Lerp toward targetDist for button/dblclick zooms
+    if (lerpActiveRef.current) {
+      const currentDist = camera.position.length();
+      const target = targetDistRef.current;
+      const diff = target - currentDist;
+      if (Math.abs(diff) < 0.002) {
+        camera.position.setLength(target);
+        lerpActiveRef.current = false;
+      } else {
+        camera.position.setLength(currentDist + diff * ZOOM_LERP);
+      }
       if (controlsRef.current) controlsRef.current.update();
     }
   });
 
+  // --------------------------------------------------------------------------
+  // Zoom button callbacks — read fresh camera position each call
+  // --------------------------------------------------------------------------
   useEffect(() => {
     zoomInRef.current = () => {
-      const cur = camera.position.length();
-      targetDistRef.current = Math.max(MIN_DISTANCE, cur - ZOOM_STEP);
+      const current = camera.position.length();
+      targetDistRef.current = Math.max(MIN_DISTANCE, current - ZOOM_STEP);
+      lerpActiveRef.current = true;
     };
     zoomOutRef.current = () => {
-      const cur = camera.position.length();
-      targetDistRef.current = Math.min(MAX_DISTANCE, cur + ZOOM_STEP);
+      const current = camera.position.length();
+      targetDistRef.current = Math.min(MAX_DISTANCE, current + ZOOM_STEP);
+      lerpActiveRef.current = true;
     };
-  });
+  }, [camera, zoomInRef, zoomOutRef]);
+
+  // --------------------------------------------------------------------------
+  // OrbitControls interaction callbacks
+  // • handleStart: cancel idle rotation + any pending lerp
+  // • handleEnd: resume idle rotation after 3s of inactivity
+  // Note: we do NOT re-sync targetDistRef from camera here — that was the
+  //       cause of previous phantom re-zoom bugs.
+  // --------------------------------------------------------------------------
+  const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleStart = useCallback(() => {
-    if (controlsRef.current) controlsRef.current.autoRotate = false;
+    isInteractingRef.current = true;
+    lerpActiveRef.current = false; // stop any in-flight programmatic zoom
+    if (resumeTimerRef.current !== null) {
+      clearTimeout(resumeTimerRef.current);
+      resumeTimerRef.current = null;
+    }
   }, []);
 
   const handleEnd = useCallback(() => {
-    targetDistRef.current = camera.position.length();
-    const timer = setTimeout(() => {
-      if (controlsRef.current) controlsRef.current.autoRotate = true;
-    }, 3500);
-    return () => clearTimeout(timer);
-  }, [camera]);
+    // Clear any pending resume, then schedule a new one
+    if (resumeTimerRef.current !== null) {
+      clearTimeout(resumeTimerRef.current);
+    }
+    resumeTimerRef.current = setTimeout(() => {
+      resumeTimerRef.current = null;
+      isInteractingRef.current = false;
+    }, 3000);
+  }, []);
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (resumeTimerRef.current !== null) {
+        clearTimeout(resumeTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleDoubleClick = useCallback(() => {
-    targetDistRef.current = Math.max(
-      MIN_DISTANCE,
-      targetDistRef.current - ZOOM_STEP * 1.5,
-    );
-  }, []);
+    const current = camera.position.length();
+    targetDistRef.current = Math.max(MIN_DISTANCE, current - ZOOM_STEP * 1.5);
+    lerpActiveRef.current = true;
+  }, [camera]);
 
   const validNews = newsItems.filter(
     (a) => !(Math.abs(a.lat) < 0.01 && Math.abs(a.lng) < 0.01),
@@ -384,7 +444,6 @@ function GlobeContent({
 
       <EarthMesh />
 
-      {/* ISS orbit ring (subtle decorative arc) */}
       <ISSOrbitRing issLat={issPosition?.lat ?? null} />
 
       {/* News pins */}
@@ -418,14 +477,13 @@ function GlobeContent({
         enableZoom
         minDistance={MIN_DISTANCE}
         maxDistance={MAX_DISTANCE}
-        autoRotate
-        autoRotateSpeed={0.3}
+        autoRotate={false}
         enablePan={false}
         onStart={handleStart}
         onEnd={handleEnd}
         makeDefault
-        domElement={gl.domElement}
         zoomSpeed={0.6}
+        enableDamping={false}
       />
     </>
   );
@@ -461,6 +519,10 @@ export function GlobeScene({
           gl={{ antialias: true, alpha: false }}
           style={{ background: "#070A0F", width: "100%", height: "100%" }}
           dpr={[1, 2]}
+          onCreated={({ gl }) => {
+            // Prevent browser scroll from hijacking touch events on mobile
+            gl.domElement.style.touchAction = "none";
+          }}
         >
           <GlobeContent
             newsItems={newsItems}
@@ -551,7 +613,7 @@ export function GlobeScene({
             }}
             data-ocid="globe.zoom_out_button"
           >
-            \u2212
+            &#x2212;
           </button>
         </div>
 
