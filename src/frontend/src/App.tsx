@@ -69,10 +69,26 @@ export default function App() {
     : null;
 
   return (
-    <div className="app-bg">
+    <div
+      className="app-bg"
+      style={{
+        height: "100dvh",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
       <div
-        className="app-container min-h-screen flex flex-col"
-        style={{ margin: "0 auto", maxWidth: "100vw" }}
+        className="app-container"
+        style={{
+          margin: "0 auto",
+          maxWidth: "100vw",
+          width: "100%",
+          display: "flex",
+          flexDirection: "column",
+          height: "100%",
+          overflow: "hidden",
+        }}
       >
         <Header
           onRefresh={refresh}
@@ -86,19 +102,44 @@ export default function App() {
           onSearchChange={setSearchQuery}
         />
 
-        {/* Main content row */}
+        {/* Main content row — fills all remaining height, no overflow */}
         <main
-          className="flex flex-1 min-h-0"
-          style={{ minHeight: "600px", alignItems: "stretch" }}
+          style={{
+            display: "flex",
+            flex: "1 1 0",
+            minHeight: 0,
+            overflow: "hidden",
+            alignItems: "stretch",
+          }}
         >
-          {/* Globe column */}
+          {/* Globe column — contained, no bleed */}
           <div
-            className="relative flex-1 flex flex-col"
-            style={{ minWidth: 0 }}
+            style={{
+              position: "relative",
+              flex: "1 1 0",
+              minWidth: 0,
+              minHeight: 0,
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
           >
-            <div className="flex-1" style={{ minHeight: "min(75vh, 700px)" }}>
+            {/* Globe canvas box — strictly bounded */}
+            <div
+              style={{
+                flex: "1 1 0",
+                minHeight: 0,
+                overflow: "hidden",
+                position: "relative",
+              }}
+            >
               <motion.div
-                className="w-full h-full"
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  position: "absolute",
+                  inset: 0,
+                }}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.8 }}
@@ -115,7 +156,7 @@ export default function App() {
 
             {/* Pin legend */}
             <div
-              className="flex flex-wrap justify-center gap-4 py-2.5 text-xs"
+              className="flex flex-wrap justify-center gap-4 py-2 text-xs shrink-0"
               style={{ borderTop: "1px solid #1B2334", color: "#A9B3C7" }}
             >
               <span className="flex items-center gap-1.5">
@@ -184,6 +225,7 @@ export default function App() {
               width: "36%",
               maxWidth: 460,
               minHeight: 0,
+              overflow: "hidden",
               alignSelf: "stretch",
             }}
           >
@@ -197,7 +239,7 @@ export default function App() {
             <SpaceWeatherWidget data={spaceWeather} />
 
             {/* News panel fills all remaining space */}
-            <div className="flex-1 min-h-0">
+            <div style={{ flex: "1 1 0", minHeight: 0, overflow: "hidden" }}>
               <NewsPanel
                 articles={displayArticles}
                 isLoading={isLoading}
@@ -208,7 +250,14 @@ export default function App() {
         </main>
 
         {/* Mobile news panel */}
-        <div className="lg:hidden" style={{ borderTop: "1px solid #1B2334" }}>
+        <div
+          className="lg:hidden"
+          style={{
+            borderTop: "1px solid #1B2334",
+            maxHeight: "40vh",
+            overflowY: "auto",
+          }}
+        >
           <NewsPanel
             articles={displayArticles}
             isLoading={isLoading}
@@ -218,7 +267,7 @@ export default function App() {
 
         {/* Footer */}
         <footer
-          className="py-4 px-4"
+          className="py-3 px-4 shrink-0"
           style={{ borderTop: "1px solid #1B2334", background: "#0C1222" }}
         >
           <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
