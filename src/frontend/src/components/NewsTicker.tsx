@@ -16,8 +16,8 @@ function relativeTime(iso: string): string {
   }
 }
 
-// Reading speed: ~60px per second — comfortable, readable
-const PX_PER_SECOND = 60;
+// Reading speed: ~30px per second — slow, comfortable, readable (halved from 60)
+const PX_PER_SECOND = 30;
 
 export function NewsTicker({ articles }: NewsTickerProps) {
   const [paused, setPaused] = useState(false);
@@ -53,7 +53,6 @@ export function NewsTicker({ articles }: NewsTickerProps) {
   // Measure actual rendered track width for accurate animation duration
   useEffect(() => {
     if (!trackRef.current) return;
-    // Use ResizeObserver to get the real width of one set of items
     const observer = new ResizeObserver(() => {
       if (trackRef.current) {
         // The track contains 2 copies; half width = one copy
@@ -62,11 +61,11 @@ export function NewsTicker({ articles }: NewsTickerProps) {
     });
     observer.observe(trackRef.current);
     return () => observer.disconnect();
-  }, []); // ResizeObserver watches the DOM element directly
+  }, []);
 
-  // Duration based on actual measured width
+  // Duration based on actual measured width — halved speed means doubled duration
   const animationDuration =
-    trackWidth > 0 ? Math.max(30, Math.round(trackWidth / PX_PER_SECOND)) : 120;
+    trackWidth > 0 ? Math.max(60, Math.round(trackWidth / PX_PER_SECOND)) : 240;
 
   if (tickerItems.length === 0) return null;
 
@@ -167,7 +166,6 @@ export function NewsTicker({ articles }: NewsTickerProps) {
             alignItems: "center",
             height: "100%",
             whiteSpace: "nowrap",
-            // Use CSS animation with keyframes defined in index.css
             animationName: "ticker-scroll",
             animationDuration: `${animationDuration}s`,
             animationTimingFunction: "linear",
@@ -176,7 +174,7 @@ export function NewsTicker({ articles }: NewsTickerProps) {
             willChange: "transform",
           }}
         >
-          {/* Duplicate items x2 for seamless loop — translateX(-50%) returns to start */}
+          {/* Duplicate items x2 for seamless loop */}
           {[...tickerItems, ...tickerItems].map((item, idx) => (
             <span
               key={`${item.id}-${idx}`}

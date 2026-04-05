@@ -12,6 +12,15 @@ import type { ReactNode } from "react";
 import * as THREE from "three";
 import type { NewsItem } from "../backend.d";
 import type { EarthquakeItem, ISSItem, VolcanoItem } from "../types";
+import type {
+  AirQualityPin,
+  CyclonePin,
+  FlightPin,
+  MeteorShowerPin,
+  TsunamiPin,
+  WeatherPin,
+  WildfirePin,
+} from "../types/filters";
 import { NewsPin, type PinItem, latLngToVector3 } from "./NewsPin";
 
 // Progressive texture LODs
@@ -269,6 +278,95 @@ function EarthMesh() {
 }
 
 // ── ISS Orbit Ring (decorative orbital path) ─────────────────────────────────
+// ── Generic overlay dot for filter layers ────────────────────────────────────
+interface OverlayDotProps {
+  lat: number;
+  lng: number;
+  color: string;
+  label: string;
+  size: number;
+  glowOpacity: number;
+}
+
+function OverlayDot({
+  lat,
+  lng,
+  color,
+  label,
+  size,
+  glowOpacity,
+}: OverlayDotProps) {
+  const groupRef = useRef<THREE.Group>(null);
+  const [hovered, setHovered] = useState(false);
+  const { camera } = useThree();
+  const pos = latLngToVector3(lat, lng);
+
+  useFrame(() => {
+    if (!groupRef.current) return;
+    const dist = camera.position.length();
+    const distScale = dist / 5;
+    const clamped = Math.max(0.5, Math.min(2.2, distScale));
+    groupRef.current.scale.setScalar(clamped * (hovered ? 1.8 : 1));
+  });
+
+  return (
+    <group position={pos.toArray()}>
+      <group ref={groupRef}>
+        <mesh renderOrder={2}>
+          <sphereGeometry args={[size * 1.8, 8, 8]} />
+          <meshBasicMaterial
+            color={color}
+            transparent
+            opacity={glowOpacity}
+            depthWrite={false}
+          />
+        </mesh>
+        <mesh
+          renderOrder={3}
+          onPointerOver={(e) => {
+            e.stopPropagation();
+            setHovered(true);
+            document.body.style.cursor = "default";
+          }}
+          onPointerOut={() => {
+            setHovered(false);
+          }}
+        >
+          <sphereGeometry args={[size, 8, 8]} />
+          <meshBasicMaterial color={color} />
+        </mesh>
+      </group>
+      {hovered && (
+        <Html
+          center
+          distanceFactor={10}
+          style={{ pointerEvents: "none", whiteSpace: "nowrap" }}
+          position={[0, size * 12, 0]}
+          zIndexRange={[100, 200]}
+        >
+          <div
+            style={{
+              background: "rgba(10,13,22,0.95)",
+              border: `1px solid ${color}66`,
+              borderRadius: "7px",
+              padding: "5px 10px",
+              fontSize: "10px",
+              fontWeight: 600,
+              color: "#E9EEF7",
+              fontFamily: "'Plus Jakarta Sans', sans-serif",
+              maxWidth: "240px",
+              whiteSpace: "normal",
+              boxShadow: `0 4px 16px rgba(0,0,0,0.6), 0 0 0 1px ${color}22`,
+            }}
+          >
+            {label}
+          </div>
+        </Html>
+      )}
+    </group>
+  );
+}
+
 function ISSOrbitRing({ issLat }: { issLat: number | null }) {
   const ringRef = useRef<THREE.Mesh>(null);
   const { camera } = useThree();
@@ -308,6 +406,13 @@ interface GlobeContentProps {
   onPinClick: (item: PinItem) => void;
   zoomInRef: React.MutableRefObject<() => void>;
   zoomOutRef: React.MutableRefObject<() => void>;
+  weatherPins: WeatherPin[];
+  wildfirePins: WildfirePin[];
+  cyclonePins: CyclonePin[];
+  flightPins: FlightPin[];
+  airQualityPins: AirQualityPin[];
+  tsunamiPins: TsunamiPin[];
+  meteorPins: MeteorShowerPin[];
 }
 
 function GlobeContent({
@@ -318,6 +423,13 @@ function GlobeContent({
   onPinClick,
   zoomInRef,
   zoomOutRef,
+  weatherPins,
+  wildfirePins,
+  cyclonePins,
+  flightPins,
+  airQualityPins,
+  tsunamiPins,
+  meteorPins,
 }: GlobeContentProps) {
   const { camera } = useThree();
   const controlsRef = useRef<any>(null);
@@ -466,6 +578,97 @@ function GlobeContent({
         <NewsPin key="iss" item={issPosition} onClick={onPinClick} />
       )}
 
+      {/* Weather overlay pins */}
+      {weatherPins.map((w) => (
+        <OverlayDot
+          key={w.id}
+          lat={w.lat}
+          lng={w.lng}
+          color="#38BDF8"
+          label={w.title}
+          size={0.025}
+          glowOpacity={0.25}
+        />
+      ))}
+
+      {/* Wildfire overlay pins */}
+      {wildfirePins.map((f) => (
+        <OverlayDot
+          key={f.id}
+          lat={f.lat}
+          lng={f.lng}
+          color="#FF6600"
+          label={f.title}
+          size={0.018}
+          glowOpacity={0.3}
+        />
+      ))}
+
+      {/* Cyclone overlay pins */}
+      {cyclonePins.map((c) => (
+        <OverlayDot
+          key={c.id}
+          lat={c.lat}
+          lng={c.lng}
+          color="#A855F7"
+          label={c.title}
+          size={0.04}
+          glowOpacity={0.4}
+        />
+      ))}
+
+      {/* Flight overlay pins */}
+      {flightPins.map((f) => (
+        <OverlayDot
+          key={f.id}
+          lat={f.lat}
+          lng={f.lng}
+          color="#22D3EE"
+          label={f.title}
+          size={0.012}
+          glowOpacity={0.15}
+        />
+      ))}
+
+      {/* Air quality overlay pins */}
+      {airQualityPins.map((a) => (
+        <OverlayDot
+          key={a.id}
+          lat={a.lat}
+          lng={a.lng}
+          color={a.aqi > 150 ? "#EF4444" : a.aqi > 100 ? "#F97316" : "#FACC15"}
+          label={a.title}
+          size={0.028}
+          glowOpacity={0.3}
+        />
+      ))}
+
+      {/* Tsunami overlay pins */}
+      {tsunamiPins.map((t) => (
+        <OverlayDot
+          key={t.id}
+          lat={t.lat}
+          lng={t.lng}
+          color="#0EA5E9"
+          label={t.title}
+          size={0.04}
+          glowOpacity={0.45}
+        />
+      ))}
+
+      {/* Meteor shower overlay pins */}
+      {meteorPins.map((m) => (
+        <OverlayDot
+          key={m.id}
+          lat={m.lat}
+          lng={m.lng}
+          color="#FDE68A"
+          label={m.title}
+          size={0.03}
+          glowOpacity={0.25}
+        />
+      ))}
+
       {/* Invisible sphere to catch double-click */}
       <mesh visible={false} onDoubleClick={handleDoubleClick} renderOrder={-1}>
         <sphereGeometry args={[10, 8, 8]} />
@@ -495,6 +698,15 @@ interface GlobeSceneProps {
   issPosition: ISSItem | null;
   volcanoes: VolcanoItem[];
   onPinClick: (item: PinItem) => void;
+  weatherPins?: WeatherPin[];
+  wildfirePins?: WildfirePin[];
+  cyclonePins?: CyclonePin[];
+  flightPins?: FlightPin[];
+  airQualityPins?: AirQualityPin[];
+  tsunamiPins?: TsunamiPin[];
+  meteorPins?: MeteorShowerPin[];
+  onFilterToggle?: () => void;
+  filterElement?: React.ReactNode;
 }
 
 export function GlobeScene({
@@ -503,6 +715,14 @@ export function GlobeScene({
   issPosition,
   volcanoes,
   onPinClick,
+  weatherPins = [],
+  wildfirePins = [],
+  cyclonePins = [],
+  flightPins = [],
+  airQualityPins = [],
+  tsunamiPins = [],
+  meteorPins = [],
+  filterElement,
 }: GlobeSceneProps) {
   const zoomInRef = useRef<() => void>(() => {});
   const zoomOutRef = useRef<() => void>(() => {});
@@ -532,6 +752,13 @@ export function GlobeScene({
             onPinClick={onPinClick}
             zoomInRef={zoomInRef}
             zoomOutRef={zoomOutRef}
+            weatherPins={weatherPins}
+            wildfirePins={wildfirePins}
+            cyclonePins={cyclonePins}
+            flightPins={flightPins}
+            airQualityPins={airQualityPins}
+            tsunamiPins={tsunamiPins}
+            meteorPins={meteorPins}
           />
         </Canvas>
 
@@ -665,6 +892,9 @@ export function GlobeScene({
             </span>
           </div>
         )}
+
+        {/* Filter overlay controls - bottom left */}
+        {filterElement}
       </div>
     </GlobeErrorBoundary>
   );

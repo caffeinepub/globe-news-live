@@ -2,6 +2,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { motion } from "motion/react";
 import { useCallback, useMemo, useState } from "react";
 import type { NewsItem } from "./backend.d";
+import { GlobeFilters } from "./components/GlobeFilters";
 import { GlobeScene } from "./components/GlobeScene";
 import { Header } from "./components/Header";
 import { MarketPrices } from "./components/MarketPrices";
@@ -11,11 +12,13 @@ import { NewsTicker } from "./components/NewsTicker";
 import { PinOverlay } from "./components/PinOverlay";
 import { SpaceWeatherWidget } from "./components/SpaceWeather";
 import { useEarthquakes } from "./hooks/useEarthquakes";
+import { useGlobeFilters } from "./hooks/useGlobeFilters";
 import { useISS } from "./hooks/useISS";
 import { useNews } from "./hooks/useNews";
 import { useSpaceWeather } from "./hooks/useSpaceWeather";
 import { useVolcanoes } from "./hooks/useVolcanoes";
 import type { EarthquakeItem, ISSItem, VolcanoItem } from "./types";
+import type { FilterLayerId } from "./types/filters";
 
 type SelectedItem = PinItem | null;
 
@@ -28,6 +31,20 @@ export default function App() {
   const issRaw = useISS();
   const volcanoes = useVolcanoes();
   const spaceWeather = useSpaceWeather();
+
+  // Globe filter layers
+  const [activeLayers, setActiveLayers] = useState<Set<FilterLayerId>>(
+    new Set(),
+  );
+  const toggleLayer = useCallback((id: FilterLayerId) => {
+    setActiveLayers((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  const filterData = useGlobeFilters(activeLayers);
 
   // Shape ISS position into ISSItem for the globe
   const issPosition: ISSItem | null = issRaw
@@ -150,6 +167,21 @@ export default function App() {
                   issPosition={issPosition}
                   volcanoes={volcanoes}
                   onPinClick={handlePinClick}
+                  weatherPins={filterData.weatherPins}
+                  wildfirePins={filterData.wildfirePins}
+                  cyclonePins={filterData.cyclonePins}
+                  flightPins={filterData.flightPins}
+                  airQualityPins={filterData.airQualityPins}
+                  tsunamiPins={filterData.tsunamiPins}
+                  meteorPins={filterData.meteorPins}
+                  filterElement={
+                    <GlobeFilters
+                      activeLayers={activeLayers}
+                      onToggle={toggleLayer}
+                      moonPhase={filterData.moonPhase}
+                      loadingLayers={filterData.loadingLayers}
+                    />
+                  }
                 />
               </motion.div>
             </div>
@@ -213,7 +245,8 @@ export default function App() {
                 </span>
               )}
               <span className="hidden sm:inline" style={{ color: "#3A4560" }}>
-                Drag · Scroll / ±buttons / Double-click to zoom · Click pins
+                Drag · Scroll / ±buttons / Double-click to zoom · Hover or click
+                pins
               </span>
             </div>
           </div>
@@ -284,19 +317,29 @@ export default function App() {
               <span>— Real-time global news, updated hourly</span>
             </div>
             <div
-              className="flex items-center gap-1"
+              className="flex items-center gap-3"
               style={{ color: "#A9B3C7" }}
             >
-              © {new Date().getFullYear()}. Built with{" "}
-              <span style={{ color: "#FF3B3B" }}>♥</span> using{" "}
+              <span>
+                &copy; {new Date().getFullYear()} Dark Predictions. All rights
+                reserved.
+              </span>
+              <span style={{ color: "#1B2334" }}>|</span>
               <a
-                href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(window.location.hostname)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="transition-colors hover:opacity-80 underline underline-offset-2"
-                style={{ color: "#E9EEF7" }}
+                href="mailto:offgridsecrets@gmail.com"
+                style={{
+                  color: "#A9B3C7",
+                  textDecoration: "none",
+                  transition: "color 0.15s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = "#E9EEF7";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = "#A9B3C7";
+                }}
               >
-                caffeine.ai
+                offgridsecrets@gmail.com
               </a>
             </div>
           </div>
