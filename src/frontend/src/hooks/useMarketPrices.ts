@@ -3,6 +3,10 @@ import { Actor, HttpAgent } from "@icp-sdk/core/agent";
 import type { IDL as IDLType } from "@icp-sdk/core/candid";
 import { useEffect, useRef, useState } from "react";
 
+// Reset actor cache on module load — prevents stale null cache from a prior
+// failed init from permanently blocking all backend index fetches.
+let _actorInitialized = false;
+
 export type MarketAsset = {
   id: string;
   name: string;
@@ -32,24 +36,28 @@ async function coinbaseSpot(pair: string): Promise<number> {
   return val;
 }
 
-// ── Metals.live (free, no key, CORS-open) ────────────────────────────────────
+// ── Metals.live (free, no key, CORS-open) — used as secondary fallback ──────
 async function fetchMetalsLive(): Promise<{ gold: number; silver: number }> {
-  const res = await fetch("https://api.metals.live/v1/spot", {
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!res.ok) throw new Error(`metals.live HTTP ${res.status}`);
-  const data = await res.json();
-  // Returns array of objects like [{ gold: 1900.5 }, { silver: 23.1 }, ...]
-  let gold = 0;
-  let silver = 0;
-  if (Array.isArray(data)) {
-    for (const item of data) {
-      if (typeof item?.gold === "number" && item.gold > 0) gold = item.gold;
-      if (typeof item?.silver === "number" && item.silver > 0)
-        silver = item.silver;
+  try {
+    const res = await fetch("https://api.metals.live/v1/spot", {
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return { gold: 0, silver: 0 };
+    const data = await res.json();
+    // Returns array of objects like [{ gold: 1900.5 }, { silver: 23.1 }, ...]
+    let gold = 0;
+    let silver = 0;
+    if (Array.isArray(data)) {
+      for (const item of data) {
+        if (typeof item?.gold === "number" && item.gold > 0) gold = item.gold;
+        if (typeof item?.silver === "number" && item.silver > 0)
+          silver = item.silver;
+      }
     }
+    return { gold, silver };
+  } catch {
+    return { gold: 0, silver: 0 };
   }
-  return { gold, silver };
 }
 
 // ── Parse stooq DAILY CSV ────────────────────────────────────────────────────
@@ -100,14 +108,26 @@ type MarketActor = {
 };
 
 let _actorCache: MarketActor | null = null;
+// Allow one retry per session if the actor was null (e.g. config wasn't ready yet)
 let _actorPromise: Promise<MarketActor | null> | null = null;
 
 async function getMarketActor(): Promise<MarketActor | null> {
   if (_actorCache) return _actorCache;
-  if (_actorPromise) return _actorPromise;
+  // If a pending promise exists, wait for it; but if _actorInitialized is true
+  // and we already got null, return null immediately without re-fetching.
+  if (_actorPromise) {
+    const result = await _actorPromise;
+    // If we got null but haven't tried after the page warmed up, allow a retry
+    // by resetting _actorPromise. This is safe since we cache _actorCache on success.
+    if (result === null) {
+      _actorPromise = null; // reset to allow next call to try again
+    }
+    return result;
+  }
 
   _actorPromise = (async () => {
     try {
+      _actorInitialized = true;
       const config = await loadConfig();
       const canisterId = config.backend_canister_id;
       if (!canisterId || canisterId === "undefined") return null;
@@ -132,6 +152,7 @@ async function getMarketActor(): Promise<MarketActor | null> {
       _actorCache = actor;
       return actor;
     } catch {
+      _actorPromise = null; // reset so next call can retry
       return null;
     }
   })();
@@ -213,7 +234,7 @@ async function fetchAllAssets(): Promise<MarketAsset[]> {
       : fetchIndexFallback("%5Espx"),
     actor
       ? fetchIndexFromBackend(actor, "getCachedNASDAQ")
-      : fetchIndexFallback("%5Endq"),
+      : fetchIndexFallback("%5Endx"),
     actor
       ? fetchIndexFromBackend(actor, "getCachedDow")
       : fetchIndexFallback("%5Edji"),
@@ -269,7 +290,7 @@ async function fetchAllAssets(): Promise<MarketAsset[]> {
 
   const [sp500Final, nasdaqFinal, dowFinal, oilFinal] = await Promise.all([
     resolveIndex(sp500, "%5Espx"),
-    resolveIndex(nasdaq, "%5Endq"),
+    resolveIndex(nasdaq, "%5Endx"),
     resolveIndex(dow, "%5Edji"),
     resolveIndex(oil, "cl.f"),
   ]);

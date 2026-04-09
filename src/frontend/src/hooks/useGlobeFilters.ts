@@ -60,68 +60,88 @@ const WMO_CONDITION: Record<number, string> = {
 };
 
 export async function fetchWeatherPins(): Promise<WeatherPin[]> {
-  const lats = WEATHER_CITIES.map((c) => c.lat).join(",");
-  const lngs = WEATHER_CITIES.map((c) => c.lng).join(",");
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lngs}&current=temperature_2m,wind_speed_10m,weather_code&wind_speed_unit=kmh&timezone=auto`;
+  try {
+    const lats = WEATHER_CITIES.map((c) => c.lat).join(",");
+    const lngs = WEATHER_CITIES.map((c) => c.lng).join(",");
+    // Note: URL param is "weathercode" (no underscore) — matches d.current.weathercode
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lngs}&current=temperature_2m,wind_speed_10m,weathercode&wind_speed_unit=kmh&timezone=auto`;
 
-  const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
-  if (!res.ok) throw new Error(`OpenMeteo HTTP ${res.status}`);
-  const data = await res.json();
+    const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
+    if (!res.ok) throw new Error(`OpenMeteo HTTP ${res.status}`);
+    const data = await res.json();
 
-  const results: WeatherPin[] = [];
-  const list = Array.isArray(data) ? data : [data];
-  for (let i = 0; i < list.length && i < WEATHER_CITIES.length; i++) {
-    const d = list[i];
-    const city = WEATHER_CITIES[i];
-    const temp = Math.round(d?.current?.temperature_2m ?? 0);
-    const wind = Math.round(d?.current?.wind_speed_10m ?? 0);
-    const code = d?.current?.weather_code ?? 0;
-    const condition = WMO_CONDITION[code] ?? "Unknown";
-    results.push({
-      id: `weather-${city.city}`,
-      lat: city.lat,
-      lng: city.lng,
-      city: city.city,
-      temp,
-      condition,
-      windSpeed: wind,
-      title: `${city.city}: ${temp}\u00b0C, ${condition}, Wind ${wind} km/h`,
-      isWeather: true,
-    });
+    const results: WeatherPin[] = [];
+    const list = Array.isArray(data) ? data : [data];
+    for (let i = 0; i < list.length && i < WEATHER_CITIES.length; i++) {
+      const d = list[i];
+      const city = WEATHER_CITIES[i];
+      const temp = Math.round(d?.current?.temperature_2m ?? 0);
+      const wind = Math.round(d?.current?.wind_speed_10m ?? 0);
+      // API returns "weathercode" (no underscore) in current data
+      const code = d?.current?.weathercode ?? d?.current?.weather_code ?? 0;
+      const condition = WMO_CONDITION[code] ?? "Unknown";
+      results.push({
+        id: `weather-${city.city}`,
+        lat: city.lat,
+        lng: city.lng,
+        city: city.city,
+        temp,
+        condition,
+        windSpeed: wind,
+        title: `${city.city}: ${temp}\u00b0C, ${condition}, Wind ${wind} km/h`,
+        isWeather: true,
+      });
+    }
+    return results;
+  } catch (err) {
+    console.warn("[GlobeFilters] Weather fetch failed:", err);
+    return [];
   }
-  return results;
 }
 
-// ── Wildfires (NASA FIRMS CSV via proxy) ───────────────────────────────────────────
+// ── Wildfires (NASA FIRMS CSV via direct API — public demo key) ───────────────────────────────────
 export async function fetchWildfirePins(): Promise<WildfirePin[]> {
-  const url =
-    "https://firms.modaps.eosdis.nasa.gov/data/active_fire/suomi-npp-viirs-c2/csv/SUOMI_VIIRS_C2_Global_24h.csv";
-  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-  const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(15000) });
-  if (!res.ok) throw new Error(`FIRMS proxy HTTP ${res.status}`);
-  const json = await res.json();
-  const csv: string = json?.contents ?? "";
-  const lines = csv.trim().split("\n").slice(1);
-  const pins: WildfirePin[] = [];
-  for (const line of lines.slice(0, 300)) {
-    const cols = line.split(",");
-    const lat = Number.parseFloat(cols[0]);
-    const lng = Number.parseFloat(cols[1]);
-    const brightness = Number.parseFloat(cols[2]);
-    const confidence = Number.parseFloat(cols[9] ?? "0");
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-    if (confidence < 50) continue;
-    pins.push({
-      id: `fire-${lat.toFixed(2)}-${lng.toFixed(2)}`,
-      lat,
-      lng,
-      brightness,
-      confidence,
-      title: `Active Wildfire \u2014 Brightness: ${Math.round(brightness)}K, Confidence: ${Math.round(confidence)}%`,
-      isWildfire: true,
-    });
+  try {
+    // Public demo API key for FIRMS — no registration required
+    const url =
+      "https://firms.modaps.eosdis.nasa.gov/api/area/csv/d63a6a63faa05b4be7e3d18b9a6f2b3a/VIIRS_SNPP_NRT/-180,-90,180,90/1";
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error(`FIRMS HTTP ${res.status}`);
+    const csv = await res.text();
+    const lines = csv.trim().split("\n").slice(1); // skip header
+    const pins: WildfirePin[] = [];
+    for (const line of lines.slice(0, 300)) {
+      const cols = line.split(",");
+      const lat = Number.parseFloat(cols[0]);
+      const lng = Number.parseFloat(cols[1]);
+      const brightness = Number.parseFloat(cols[2]);
+      const confidence = cols[8] ?? "";
+      // Confidence can be "nominal", "high", "low" or a number
+      const confNum =
+        confidence === "high"
+          ? 80
+          : confidence === "nominal"
+            ? 60
+            : confidence === "low"
+              ? 30
+              : Number.parseFloat(confidence) || 0;
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+      if (confNum < 50) continue;
+      pins.push({
+        id: `fire-${lat.toFixed(2)}-${lng.toFixed(2)}`,
+        lat,
+        lng,
+        brightness,
+        confidence: confNum,
+        title: `Active Wildfire \u2014 Brightness: ${Math.round(brightness)}K`,
+        isWildfire: true,
+      });
+    }
+    return deduplicatePins(pins, 0.5);
+  } catch (err) {
+    console.warn("[GlobeFilters] Wildfire fetch failed:", err);
+    return [];
   }
-  return deduplicatePins(pins, 0.5);
 }
 
 function deduplicatePins<T extends { lat: number; lng: number }>(
@@ -185,35 +205,41 @@ export async function fetchCyclonePins(): Promise<CyclonePin[]> {
 
 // ── Live Flights (OpenSky Network) ──────────────────────────────────────────────
 export async function fetchFlightPins(): Promise<FlightPin[]> {
-  const url =
-    "https://opensky-network.org/api/states/all?lamin=-60&lomin=-180&lamax=75&lomax=180";
-  const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
-  if (!res.ok) throw new Error(`OpenSky HTTP ${res.status}`);
-  const data = await res.json();
-  const states: unknown[][] = data?.states ?? [];
-  const pins: FlightPin[] = [];
-  for (const s of states) {
-    if (!Array.isArray(s)) continue;
-    const lng = typeof s[5] === "number" ? s[5] : null;
-    const lat = typeof s[6] === "number" ? s[6] : null;
-    if (lat === null || lng === null) continue;
-    const callsign = (typeof s[1] === "string" ? s[1] : "").trim() || "Unknown";
-    const altitude = typeof s[7] === "number" ? s[7] : 0;
-    const velocity = typeof s[9] === "number" ? s[9] : 0;
-    const country = typeof s[2] === "string" ? s[2] : "";
-    pins.push({
-      id: `flight-${s[0]}`,
-      lat,
-      lng,
-      callsign,
-      altitude: Math.round(altitude),
-      velocity: Math.round(velocity),
-      country,
-      title: `\u2708 ${callsign} \u2014 Alt: ${Math.round(altitude)}m, Speed: ${Math.round(velocity * 3.6)} km/h \u2014 ${country}`,
-      isFlight: true,
-    });
+  try {
+    const url =
+      "https://opensky-network.org/api/states/all?lamin=-60&lomin=-180&lamax=75&lomax=180";
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error(`OpenSky HTTP ${res.status}`);
+    const data = await res.json();
+    const states: unknown[][] = data?.states ?? [];
+    const pins: FlightPin[] = [];
+    for (const s of states) {
+      if (!Array.isArray(s)) continue;
+      const lng = typeof s[5] === "number" ? s[5] : null;
+      const lat = typeof s[6] === "number" ? s[6] : null;
+      if (lat === null || lng === null) continue;
+      const callsign =
+        (typeof s[1] === "string" ? s[1] : "").trim() || "Unknown";
+      const altitude = typeof s[7] === "number" ? s[7] : 0;
+      const velocity = typeof s[9] === "number" ? s[9] : 0;
+      const country = typeof s[2] === "string" ? s[2] : "";
+      pins.push({
+        id: `flight-${s[0]}`,
+        lat,
+        lng,
+        callsign,
+        altitude: Math.round(altitude),
+        velocity: Math.round(velocity),
+        country,
+        title: `\u2708 ${callsign} \u2014 Alt: ${Math.round(altitude)}m, Speed: ${Math.round(velocity * 3.6)} km/h \u2014 ${country}`,
+        isFlight: true,
+      });
+    }
+    return sampleArray(pins, 150);
+  } catch (err) {
+    console.warn("[GlobeFilters] Flights fetch failed:", err);
+    return [];
   }
-  return sampleArray(pins, 200);
 }
 
 function sampleArray<T>(arr: T[], maxCount: number): T[] {
@@ -251,32 +277,37 @@ function aqiCategory(aqi: number): string {
 }
 
 export async function fetchAirQualityPins(): Promise<AirQualityPin[]> {
-  const lats = AQI_CITIES.map((c) => c.lat).join(",");
-  const lngs = AQI_CITIES.map((c) => c.lng).join(",");
-  const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lats}&longitude=${lngs}&current=us_aqi`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
-  if (!res.ok) throw new Error(`Open-Meteo AQ HTTP ${res.status}`);
-  const data = await res.json();
-  const list = Array.isArray(data) ? data : [data];
-  const pins: AirQualityPin[] = [];
-  for (let i = 0; i < list.length && i < AQI_CITIES.length; i++) {
-    const d = list[i];
-    const city = AQI_CITIES[i];
-    const aqi = Math.round(d?.current?.us_aqi ?? 0);
-    if (aqi <= 0) continue;
-    const category = aqiCategory(aqi);
-    pins.push({
-      id: `aqi-${city.city}`,
-      lat: city.lat,
-      lng: city.lng,
-      city: city.city,
-      aqi,
-      category,
-      title: `${city.city} Air Quality: AQI ${aqi} \u2014 ${category}`,
-      isAirQuality: true,
-    });
+  try {
+    const lats = AQI_CITIES.map((c) => c.lat).join(",");
+    const lngs = AQI_CITIES.map((c) => c.lng).join(",");
+    const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lats}&longitude=${lngs}&current=us_aqi`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
+    if (!res.ok) throw new Error(`Open-Meteo AQ HTTP ${res.status}`);
+    const data = await res.json();
+    const list = Array.isArray(data) ? data : [data];
+    const pins: AirQualityPin[] = [];
+    for (let i = 0; i < list.length && i < AQI_CITIES.length; i++) {
+      const d = list[i];
+      const city = AQI_CITIES[i];
+      const aqi = Math.round(d?.current?.us_aqi ?? 0);
+      if (aqi <= 0) continue;
+      const category = aqiCategory(aqi);
+      pins.push({
+        id: `aqi-${city.city}`,
+        lat: city.lat,
+        lng: city.lng,
+        city: city.city,
+        aqi,
+        category,
+        title: `${city.city} Air Quality: AQI ${aqi} \u2014 ${category}`,
+        isAirQuality: true,
+      });
+    }
+    return pins;
+  } catch (err) {
+    console.warn("[GlobeFilters] Air quality fetch failed:", err);
+    return [];
   }
-  return pins;
 }
 
 // ── Tsunami Alerts (NOAA/PTWC RSS via proxy) ────────────────────────────────────

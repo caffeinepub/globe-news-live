@@ -56,7 +56,7 @@ export function GlobeFilters({
           >
             <div
               style={{
-                fontSize: "0.6rem",
+                fontSize: "0.7rem",
                 fontWeight: 800,
                 letterSpacing: "0.14em",
                 color: "#3A4560",
@@ -87,16 +87,16 @@ export function GlobeFilters({
                     <div
                       style={{
                         color: "#E9EEF7",
-                        fontSize: "0.68rem",
+                        fontSize: "0.82rem",
                         fontWeight: 700,
                       }}
                     >
                       {moonPhase.phase}
                     </div>
-                    <div style={{ color: "#A9B3C7", fontSize: "0.58rem" }}>
+                    <div style={{ color: "#A9B3C7", fontSize: "0.75rem" }}>
                       {moonPhase.illumination}% illuminated
                     </div>
-                    <div style={{ color: "#3A4560", fontSize: "0.55rem" }}>
+                    <div style={{ color: "#6B7A9A", fontSize: "0.75rem" }}>
                       Full: {moonPhase.nextFull} · New: {moonPhase.nextNew}
                     </div>
                   </div>
@@ -162,7 +162,7 @@ export function GlobeFilters({
                       <div
                         style={{
                           color: active ? "#E9EEF7" : "#A9B3C7",
-                          fontSize: "0.68rem",
+                          fontSize: "0.78rem",
                           fontWeight: active ? 700 : 500,
                           lineHeight: 1.2,
                           transition: "color 0.15s",
@@ -173,7 +173,7 @@ export function GlobeFilters({
                           <span
                             style={{
                               marginLeft: 5,
-                              fontSize: "0.55rem",
+                              fontSize: "0.65rem",
                               color: layer.color,
                               opacity: 0.8,
                             }}
@@ -184,8 +184,8 @@ export function GlobeFilters({
                       </div>
                       <div
                         style={{
-                          color: "#3A4560",
-                          fontSize: "0.55rem",
+                          color: "#5A6580",
+                          fontSize: "0.7rem",
                           lineHeight: 1.2,
                           marginTop: 1,
                         }}

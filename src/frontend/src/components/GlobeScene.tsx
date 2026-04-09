@@ -346,17 +346,19 @@ function OverlayDot({
         >
           <div
             style={{
-              background: "rgba(10,13,22,0.95)",
-              border: `1px solid ${color}66`,
-              borderRadius: "7px",
-              padding: "5px 10px",
-              fontSize: "10px",
-              fontWeight: 600,
+              background: "rgba(10,13,22,0.96)",
+              border: `1px solid ${color}55`,
+              borderRadius: "6px",
+              padding: "6px 10px",
+              fontSize: "0.75rem",
+              fontWeight: 500,
               color: "#E9EEF7",
               fontFamily: "'Plus Jakarta Sans', sans-serif",
-              maxWidth: "240px",
+              maxWidth: "220px",
               whiteSpace: "normal",
-              boxShadow: `0 4px 16px rgba(0,0,0,0.6), 0 0 0 1px ${color}22`,
+              wordBreak: "break-word",
+              lineHeight: 1.35,
+              boxShadow: `0 4px 14px rgba(0,0,0,0.65), 0 0 0 1px ${color}18`,
             }}
           >
             {label}
