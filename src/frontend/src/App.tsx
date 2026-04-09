@@ -1,7 +1,6 @@
 import { Toaster } from "@/components/ui/sonner";
 import { motion } from "motion/react";
 import { useCallback, useMemo, useState } from "react";
-import type { NewsItem } from "./backend.d";
 import { GlobeFilters } from "./components/GlobeFilters";
 import { GlobeScene } from "./components/GlobeScene";
 import { Header } from "./components/Header";
@@ -17,6 +16,7 @@ import { useISS } from "./hooks/useISS";
 import { useNews } from "./hooks/useNews";
 import { useSpaceWeather } from "./hooks/useSpaceWeather";
 import { useVolcanoes } from "./hooks/useVolcanoes";
+import type { NewsItem } from "./types";
 import type { EarthquakeItem, ISSItem, VolcanoItem } from "./types";
 import type { FilterLayerId } from "./types/filters";
 

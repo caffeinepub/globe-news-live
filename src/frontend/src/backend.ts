@@ -119,14 +119,91 @@ export interface http_request_result {
     headers: Array<http_header>;
 }
 export interface backendInterface {
+    fetchStooqCSV(symbol: string): Promise<string>;
+    getCachedDow(): Promise<string>;
+    getCachedNASDAQ(): Promise<string>;
+    getCachedOil(): Promise<string>;
+    getCachedSP500(): Promise<string>;
     getLastUpdated(): Promise<bigint>;
+    getMarketLastUpdated(): Promise<bigint>;
     getNews(): Promise<Array<NewsItem>>;
     getNextCountry(current: string): Promise<string>;
+    refreshMarketData(): Promise<void>;
     refreshNews(): Promise<void>;
     transform(input: TransformationInput): Promise<TransformationOutput>;
 }
 export class Backend implements backendInterface {
     constructor(private actor: ActorSubclass<_SERVICE>, private _uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, private _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, private processError?: (error: unknown) => never){}
+    async fetchStooqCSV(arg0: string): Promise<string> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.fetchStooqCSV(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.fetchStooqCSV(arg0);
+            return result;
+        }
+    }
+    async getCachedDow(): Promise<string> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getCachedDow();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getCachedDow();
+            return result;
+        }
+    }
+    async getCachedNASDAQ(): Promise<string> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getCachedNASDAQ();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getCachedNASDAQ();
+            return result;
+        }
+    }
+    async getCachedOil(): Promise<string> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getCachedOil();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getCachedOil();
+            return result;
+        }
+    }
+    async getCachedSP500(): Promise<string> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getCachedSP500();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getCachedSP500();
+            return result;
+        }
+    }
     async getLastUpdated(): Promise<bigint> {
         if (this.processError) {
             try {
@@ -138,6 +215,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.getLastUpdated();
+            return result;
+        }
+    }
+    async getMarketLastUpdated(): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getMarketLastUpdated();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getMarketLastUpdated();
             return result;
         }
     }
@@ -166,6 +257,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.getNextCountry(arg0);
+            return result;
+        }
+    }
+    async refreshMarketData(): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.refreshMarketData();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.refreshMarketData();
             return result;
         }
     }

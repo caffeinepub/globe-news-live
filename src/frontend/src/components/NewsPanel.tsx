@@ -1,5 +1,5 @@
 import { motion } from "motion/react";
-import type { NewsItem } from "../backend.d";
+import type { NewsItem } from "../types";
 
 function relativeTime(iso: string): string {
   try {

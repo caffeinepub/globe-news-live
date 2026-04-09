@@ -1,0 +1,36 @@
+// Version: 1.0.0
+type Data__791452850<K, V> =
+  {var count : Nat__490723111; kvs : [var ?(K, V)]};
+type Internal__8484328<K, V> =
+  {children : [var ?Node__46230540<K, V>]; data : Data__791452850<K, V>};
+type Leaf__809889148<K, V> = {data : Data__791452850<K, V>};
+type Nat__490723111 = Nat__920180692;
+type Nat__920180692 = Nat;
+type NewsItem__791051751 =
+  {
+    country : Text;
+    description : Text;
+    id : Text;
+    lat : Float;
+    lng : Float;
+    publishedAt : Text;
+    source : Text;
+    title : Text;
+    url : Text
+  };
+type Node__46230540<K, V> =
+  {#internal : Internal__8484328<K, V>; #leaf : Leaf__809889148<K, V>};
+actor {
+  stable var cachedDow : Text;
+  stable var cachedNASDAQ : Text;
+  stable var cachedOil : Text;
+  stable var cachedSP500 : Text;
+  stable var lastUpdated : Int;
+  stable var marketLastUpdated : Int;
+  stable newsItems :
+    {
+      var root : Node__46230540<Text, NewsItem__791051751>;
+      var size : Nat__490723111
+    };
+  stable sources : [{lat : Float; lng : Float; name : Text}]
+};

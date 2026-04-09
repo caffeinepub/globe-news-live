@@ -1,7 +1,7 @@
 import { AlertTriangle, Clock, ExternalLink, MapPin, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect } from "react";
-import type { NewsItem } from "../backend.d";
+import type { NewsItem } from "../types";
 import type { EarthquakeItem, ISSItem, VolcanoItem } from "../types";
 
 type ModalItem = NewsItem | EarthquakeItem | ISSItem | VolcanoItem;

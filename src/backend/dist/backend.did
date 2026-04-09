@@ -1,0 +1,48 @@
+type http_request_result = 
+ record {
+   body: blob;
+   headers: vec http_header;
+   status: nat;
+ };
+type http_header = 
+ record {
+   name: text;
+   value: text;
+ };
+type TransformationOutput = 
+ record {
+   body: blob;
+   headers: vec http_header;
+   status: nat;
+ };
+type TransformationInput = 
+ record {
+   context: blob;
+   response: http_request_result;
+ };
+type NewsItem = 
+ record {
+   country: text;
+   description: text;
+   id: text;
+   lat: float64;
+   lng: float64;
+   publishedAt: text;
+   source: text;
+   title: text;
+   url: text;
+ };
+service : {
+  fetchStooqCSV: (symbol: text) -> (text);
+  getCachedDow: () -> (text) query;
+  getCachedNASDAQ: () -> (text) query;
+  getCachedOil: () -> (text) query;
+  getCachedSP500: () -> (text) query;
+  getLastUpdated: () -> (int) query;
+  getMarketLastUpdated: () -> (int) query;
+  getNews: () -> (vec NewsItem) query;
+  getNextCountry: (current: text) -> (text) query;
+  refreshMarketData: () -> ();
+  refreshNews: () -> ();
+  transform: (input: TransformationInput) -> (TransformationOutput) query;
+}

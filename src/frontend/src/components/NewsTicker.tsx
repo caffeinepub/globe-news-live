@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { NewsItem } from "../backend.d";
+import type { NewsItem } from "../types";
 
 interface NewsTickerProps {
   articles: NewsItem[];

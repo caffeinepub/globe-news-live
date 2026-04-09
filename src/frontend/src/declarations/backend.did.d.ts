@@ -37,9 +37,16 @@ export interface http_request_result {
   'headers' : Array<http_header>,
 }
 export interface _SERVICE {
+  'fetchStooqCSV' : ActorMethod<[string], string>,
+  'getCachedDow' : ActorMethod<[], string>,
+  'getCachedNASDAQ' : ActorMethod<[], string>,
+  'getCachedOil' : ActorMethod<[], string>,
+  'getCachedSP500' : ActorMethod<[], string>,
   'getLastUpdated' : ActorMethod<[], bigint>,
+  'getMarketLastUpdated' : ActorMethod<[], bigint>,
   'getNews' : ActorMethod<[], Array<NewsItem>>,
   'getNextCountry' : ActorMethod<[string], string>,
+  'refreshMarketData' : ActorMethod<[], undefined>,
   'refreshNews' : ActorMethod<[], undefined>,
   'transform' : ActorMethod<[TransformationInput], TransformationOutput>,
 }

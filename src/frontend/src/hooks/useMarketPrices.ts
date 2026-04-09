@@ -1,7 +1,7 @@
+import { loadConfig } from "@caffeineai/core-infrastructure";
 import { Actor, HttpAgent } from "@icp-sdk/core/agent";
 import type { IDL as IDLType } from "@icp-sdk/core/candid";
-import { useEffect, useState } from "react";
-import { loadConfig } from "../config";
+import { useEffect, useRef, useState } from "react";
 
 export type MarketAsset = {
   id: string;
@@ -20,7 +20,7 @@ type MarketState = {
 
 const REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
-// ── Coinbase Spot (CORS: access-control-allow-origin: *) ────────────────────────
+// ── Coinbase Spot (CORS: access-control-allow-origin: *) ─────────────────────
 async function coinbaseSpot(pair: string): Promise<number> {
   const res = await fetch(`https://api.coinbase.com/v2/prices/${pair}/spot`, {
     signal: AbortSignal.timeout(8000),
@@ -32,36 +32,35 @@ async function coinbaseSpot(pair: string): Promise<number> {
   return val;
 }
 
-// ── CoinGecko batched (public API, no key, CORS open) ───────────────────────
-type CGPrices = Record<string, { usd: number; usd_24h_change: number }>;
-
-async function fetchCoinGecko(ids: string[]): Promise<CGPrices> {
-  const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(",")}&vs_currencies=usd&include_24hr_change=true`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
-  if (!res.ok) throw new Error(`CoinGecko HTTP ${res.status}`);
-  return res.json();
-}
-
-// ── CoinGecko 30-day history ────────────────────────────────────────────────
-async function fetchCGHistory(coinId: string): Promise<number[]> {
-  const url = `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=30&interval=daily`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
-  if (!res.ok) throw new Error(`CG history HTTP ${res.status}`);
+// ── Metals.live (free, no key, CORS-open) ────────────────────────────────────
+async function fetchMetalsLive(): Promise<{ gold: number; silver: number }> {
+  const res = await fetch("https://api.metals.live/v1/spot", {
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) throw new Error(`metals.live HTTP ${res.status}`);
   const data = await res.json();
-  return (data?.prices ?? []).map((p: [number, number]) => p[1]);
+  // Returns array of objects like [{ gold: 1900.5 }, { silver: 23.1 }, ...]
+  let gold = 0;
+  let silver = 0;
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      if (typeof item?.gold === "number" && item.gold > 0) gold = item.gold;
+      if (typeof item?.silver === "number" && item.silver > 0)
+        silver = item.silver;
+    }
+  }
+  return { gold, silver };
 }
 
-// ── Parse stooq DAILY CSV ──────────────────────────────────────────────────────
-// Daily format from stooq /q/d/l/?s=SYMBOL&i=d:
-// Date,Open,High,Low,Close,Volume
-// 2025-01-15,5850.23,5902.10,5835.00,5893.45,3240000000
-function parseStooqDailyCSV(csv: string): {
+// ── Parse stooq DAILY CSV ────────────────────────────────────────────────────
+// Format: Date,Open,High,Low,Close,Volume
+function parseStooqCSV(csv: string): {
   price: number;
   prevClose: number;
   history: number[];
 } {
-  if (!csv || typeof csv !== "string")
-    return { price: 0, prevClose: 0, history: [] };
+  const zero = { price: 0, prevClose: 0, history: [] };
+  if (!csv || typeof csv !== "string" || csv.trim().length === 0) return zero;
   const lines = csv
     .trim()
     .split("\n")
@@ -71,20 +70,16 @@ function parseStooqDailyCSV(csv: string): {
         !l.toLowerCase().startsWith("date") &&
         !l.toLowerCase().startsWith("symbol"),
     );
-  if (lines.length === 0) return { price: 0, prevClose: 0, history: [] };
-  // Last line = most recent
+  if (lines.length === 0) return zero;
   const lastCols = lines[lines.length - 1].split(",");
-  // Date,Open,High,Low,Close,Volume => index 4 = Close
+  // Date(0), Open(1), High(2), Low(3), Close(4), Volume(5)
   const price = Number.parseFloat(lastCols[4] ?? "0");
-  if (!Number.isFinite(price) || price <= 0)
-    return { price: 0, prevClose: 0, history: [] };
-  // Second-to-last = previous close
+  if (!Number.isFinite(price) || price <= 0) return zero;
   let prevClose = 0;
   if (lines.length >= 2) {
     const prevCols = lines[lines.length - 2].split(",");
     prevClose = Number.parseFloat(prevCols[4] ?? "0");
   }
-  // History: last 30 close prices
   const history = lines
     .slice(-30)
     .map((l) => Number.parseFloat(l.split(",")[4] ?? "0"))
@@ -92,153 +87,197 @@ function parseStooqDailyCSV(csv: string): {
   return { price, prevClose: prevClose > 0 ? prevClose : price, history };
 }
 
-// ── Backend actor for fetchStooqCSV per-symbol ──────────────────────────────
-let _marketActor: Record<
-  string,
-  (...args: unknown[]) => Promise<unknown>
-> | null = null;
+// ── Backend Actor (raw, custom IDL) ─────────────────────────────────────────
+// We use a raw actor because the auto-generated bindings may not include
+// market methods if bindgen ran before those methods were added.
+type MarketActor = {
+  refreshMarketData: () => Promise<undefined>;
+  getCachedSP500: () => Promise<string>;
+  getCachedNASDAQ: () => Promise<string>;
+  getCachedDow: () => Promise<string>;
+  getCachedOil: () => Promise<string>;
+  fetchStooqCSV: (symbol: string) => Promise<string>;
+};
 
-async function getMarketActor(): Promise<Record<
-  string,
-  (...args: unknown[]) => Promise<unknown>
-> | null> {
-  if (_marketActor) return _marketActor;
+let _actorCache: MarketActor | null = null;
+let _actorPromise: Promise<MarketActor | null> | null = null;
+
+async function getMarketActor(): Promise<MarketActor | null> {
+  if (_actorCache) return _actorCache;
+  if (_actorPromise) return _actorPromise;
+
+  _actorPromise = (async () => {
+    try {
+      const config = await loadConfig();
+      const canisterId = config.backend_canister_id;
+      if (!canisterId || canisterId === "undefined") return null;
+
+      const idlFactory = ({ IDL }: { IDL: typeof IDLType }) =>
+        IDL.Service({
+          refreshMarketData: IDL.Func([], [], []),
+          getCachedSP500: IDL.Func([], [IDL.Text], ["query"]),
+          getCachedNASDAQ: IDL.Func([], [IDL.Text], ["query"]),
+          getCachedDow: IDL.Func([], [IDL.Text], ["query"]),
+          getCachedOil: IDL.Func([], [IDL.Text], ["query"]),
+          fetchStooqCSV: IDL.Func([IDL.Text], [IDL.Text], []),
+        });
+
+      const agent = new HttpAgent({ host: config.backend_host });
+      // biome-ignore lint/suspicious/noExplicitAny: raw actor
+      const actor = Actor.createActor(idlFactory as any, {
+        agent,
+        canisterId,
+      }) as unknown as MarketActor;
+
+      _actorCache = actor;
+      return actor;
+    } catch {
+      return null;
+    }
+  })();
+
+  return _actorPromise;
+}
+
+async function fetchIndexFromBackend(
+  actor: MarketActor,
+  method: keyof Pick<
+    MarketActor,
+    "getCachedSP500" | "getCachedNASDAQ" | "getCachedDow" | "getCachedOil"
+  >,
+): Promise<{ price: number; prevClose: number; history: number[] }> {
   try {
-    const config = await loadConfig();
-    const canisterId = config.backend_canister_id;
-    if (!canisterId || canisterId === "undefined") return null;
-
-    const idlFactory = ({ IDL }: { IDL: typeof IDLType }) =>
-      IDL.Service({
-        fetchStooqCSV: IDL.Func([IDL.Text], [IDL.Text], []),
-      });
-
-    const agent = new HttpAgent({ host: config.backend_host });
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const actor = Actor.createActor(idlFactory as any, {
-      agent,
-      canisterId,
-    }) as Record<string, (...args: unknown[]) => Promise<unknown>>;
-
-    _marketActor = actor;
-    return actor;
+    const csv = await Promise.race([
+      actor[method](),
+      new Promise<never>((_, rej) =>
+        setTimeout(() => rej(new Error("timeout")), 20000),
+      ),
+    ]);
+    return parseStooqCSV(csv);
   } catch {
-    return null;
+    return { price: 0, prevClose: 0, history: [] };
   }
 }
 
-// Fetch a single stooq symbol via the ICP backend (no CORS restriction)
-async function fetchStooqViaBackend(
+async function fetchIndexFallback(
   symbol: string,
 ): Promise<{ price: number; prevClose: number; history: number[] }> {
-  const zero = { price: 0, prevClose: 0, history: [] };
+  // fetchStooqCSV does a server-side HTTP outcall — no CORS restriction
   try {
     const actor = await getMarketActor();
-    if (!actor) return zero;
-    const csv = (await Promise.race([
+    if (!actor) return { price: 0, prevClose: 0, history: [] };
+    const csv = await Promise.race([
       actor.fetchStooqCSV(symbol),
-      new Promise((_, rej) =>
+      new Promise<never>((_, rej) =>
         setTimeout(() => rej(new Error("timeout")), 25000),
       ),
-    ])) as string;
-    if (!csv || typeof csv !== "string") return zero;
-    return parseStooqDailyCSV(csv);
-  } catch {
-    return zero;
-  }
-}
-
-// Browser-side fallback: allorigins proxy
-async function fetchStooqViaProxy(
-  symbol: string,
-): Promise<{ price: number; prevClose: number; history: number[] }> {
-  const zero = { price: 0, prevClose: 0, history: [] };
-  try {
-    const stooqUrl = `https://stooq.com/q/d/l/?s=${encodeURIComponent(symbol)}&i=d`;
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(stooqUrl)}`;
-    const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
-    if (!res.ok) throw new Error(`allorigins HTTP ${res.status}`);
-    const json = await res.json();
-    const csv = typeof json?.contents === "string" ? json.contents : "";
-    return parseStooqDailyCSV(csv);
-  } catch {
-    return zero;
-  }
-}
-
-// Fetch one index/oil symbol: try backend first, fallback to proxy
-async function fetchIndex(
-  symbol: string,
-): Promise<{ price: number; prevClose: number; history: number[] }> {
-  const result = await fetchStooqViaBackend(symbol);
-  if (result.price > 0) return result;
-  return fetchStooqViaProxy(symbol);
-}
-
-// ── Main fetch orchestrator ───────────────────────────────────────────────────
-async function fetchAllAssets(): Promise<MarketAsset[]> {
-  const [cgResult, coinbaseResults, btcHistResult, indicesResult] =
-    await Promise.allSettled([
-      fetchCoinGecko(["bitcoin", "ethereum"]),
-      Promise.allSettled([
-        coinbaseSpot("BTC-USD"),
-        coinbaseSpot("ETH-USD"),
-        coinbaseSpot("XAU-USD"),
-        coinbaseSpot("XAG-USD"),
-      ]),
-      fetchCGHistory("bitcoin"),
-      // Fetch all 4 indices/oil in parallel via backend then fallback
-      Promise.all([
-        fetchIndex("%5Espx"), // ^SPX = S&P 500
-        fetchIndex("%5Endq"), // ^NDQ = NASDAQ
-        fetchIndex("%5Edji"), // ^DJI = Dow Jones
-        fetchIndex("cl.f"), // WTI Crude Oil
-      ]),
     ]);
+    return parseStooqCSV(csv);
+  } catch {
+    return { price: 0, prevClose: 0, history: [] };
+  }
+}
 
-  const cg: CGPrices = cgResult.status === "fulfilled" ? cgResult.value : {};
+// ── Main fetch orchestrator ──────────────────────────────────────────────────
+async function fetchAllAssets(): Promise<MarketAsset[]> {
+  // Step 1: Get backend actor
+  const actor = await getMarketActor();
 
-  const cbResults =
-    coinbaseResults.status === "fulfilled" ? coinbaseResults.value : [];
+  // Step 2: Trigger a backend refresh (fire-and-forget style - don't await)
+  // so the cache is warm for next fetch cycle
+  if (actor) {
+    actor.refreshMarketData().catch(() => {
+      /* ignore */
+    });
+  }
 
-  const btcHistory: number[] =
-    btcHistResult.status === "fulfilled" ? btcHistResult.value : [];
+  // Step 3: Fetch all assets in parallel
+  const [
+    btcResult,
+    ethResult,
+    goldCoinbaseResult,
+    silverCoinbaseResult,
+    metalsResult,
+    sp500Result,
+    nasdaqResult,
+    dowResult,
+    oilResult,
+  ] = await Promise.allSettled([
+    coinbaseSpot("BTC-USD"),
+    coinbaseSpot("ETH-USD"),
+    coinbaseSpot("XAU-USD"),
+    coinbaseSpot("XAG-USD"),
+    fetchMetalsLive(),
+    actor
+      ? fetchIndexFromBackend(actor, "getCachedSP500")
+      : fetchIndexFallback("%5Espx"),
+    actor
+      ? fetchIndexFromBackend(actor, "getCachedNASDAQ")
+      : fetchIndexFallback("%5Endq"),
+    actor
+      ? fetchIndexFromBackend(actor, "getCachedDow")
+      : fetchIndexFallback("%5Edji"),
+    actor
+      ? fetchIndexFromBackend(actor, "getCachedOil")
+      : fetchIndexFallback("cl.f"),
+  ]);
 
-  const [sp500Data, nasdaqData, dowData, oilData] =
-    indicesResult.status === "fulfilled"
-      ? indicesResult.value
-      : [
-          { price: 0, prevClose: 0, history: [] },
-          { price: 0, prevClose: 0, history: [] },
-          { price: 0, prevClose: 0, history: [] },
-          { price: 0, prevClose: 0, history: [] },
-        ];
+  const get = <T>(r: PromiseSettledResult<T>, fallback: T): T =>
+    r.status === "fulfilled" ? r.value : fallback;
+
+  const btcPrice = get(btcResult, 0);
+  const ethPrice = get(ethResult, 0);
+
+  // Gold: Coinbase XAU-USD first, metals.live fallback
+  const goldCoinbase = get(goldCoinbaseResult, 0);
+  const metals = get(metalsResult, { gold: 0, silver: 0 });
+  const goldPrice = goldCoinbase > 0 ? goldCoinbase : metals.gold;
+
+  // Silver: Coinbase XAG-USD first, metals.live fallback
+  const silverCoinbase = get(silverCoinbaseResult, 0);
+  const silverPrice = silverCoinbase > 0 ? silverCoinbase : metals.silver;
+
+  const sp500 = get(sp500Result, {
+    price: 0,
+    prevClose: 0,
+    history: [] as number[],
+  });
+  const nasdaq = get(nasdaqResult, {
+    price: 0,
+    prevClose: 0,
+    history: [] as number[],
+  });
+  const dow = get(dowResult, {
+    price: 0,
+    prevClose: 0,
+    history: [] as number[],
+  });
+  const oil = get(oilResult, {
+    price: 0,
+    prevClose: 0,
+    history: [] as number[],
+  });
+
+  // If backend returned empty (cache miss), try direct fetchStooqCSV per symbol
+  const resolveIndex = async (
+    data: { price: number; prevClose: number; history: number[] },
+    symbol: string,
+  ) => {
+    if (data.price > 0) return data;
+    return fetchIndexFallback(symbol);
+  };
+
+  const [sp500Final, nasdaqFinal, dowFinal, oilFinal] = await Promise.all([
+    resolveIndex(sp500, "%5Espx"),
+    resolveIndex(nasdaq, "%5Endq"),
+    resolveIndex(dow, "%5Edji"),
+    resolveIndex(oil, "cl.f"),
+  ]);
+
+  const pctChange = (price: number, prev: number) =>
+    prev > 0 && price > 0 ? ((price - prev) / prev) * 100 : 0;
 
   const assets: MarketAsset[] = [];
-
-  const cbSpot = (idx: number): number => {
-    if (Array.isArray(cbResults) && cbResults[idx]?.status === "fulfilled") {
-      return (cbResults[idx] as PromiseFulfilledResult<number>).value;
-    }
-    return 0;
-  };
-
-  const spotPrice = (cbIdx: number, cgId?: string): number => {
-    const cb = cbSpot(cbIdx);
-    if (cb > 0) return cb;
-    if (cgId && cg[cgId]?.usd > 0) return cg[cgId].usd;
-    return 0;
-  };
-
-  const cgChange = (cgId: string): number => cg[cgId]?.usd_24h_change ?? 0;
-
-  const prevChange = (price: number, prevClose: number): number => {
-    if (prevClose > 0 && price > 0)
-      return ((price - prevClose) / prevClose) * 100;
-    return 0;
-  };
-
   const add = (
     id: string,
     name: string,
@@ -259,81 +298,43 @@ async function fetchAllAssets(): Promise<MarketAsset[]> {
     }
   };
 
-  // Bitcoin
-  const btcPrice = spotPrice(0, "bitcoin");
+  add("bitcoin", "Bitcoin", "BTC", btcPrice, 0);
+  add("ethereum", "Ethereum", "ETH", ethPrice, 0);
+  add("gold", "Gold", "XAU/oz", goldPrice, 0);
+  add("silver", "Silver", "XAG/oz", silverPrice, 0);
   add(
-    "bitcoin",
-    "Bitcoin",
-    "BTC",
-    btcPrice,
-    cgChange("bitcoin"),
-    btcHistory.length > 1 ? btcHistory : [btcPrice],
+    "sp500",
+    "S&P 500",
+    "SPX",
+    sp500Final.price,
+    pctChange(sp500Final.price, sp500Final.prevClose),
+    sp500Final.history,
+  );
+  add(
+    "nasdaq",
+    "NASDAQ",
+    "NDX",
+    nasdaqFinal.price,
+    pctChange(nasdaqFinal.price, nasdaqFinal.prevClose),
+    nasdaqFinal.history,
+  );
+  add(
+    "dow",
+    "Dow Jones",
+    "DJIA",
+    dowFinal.price,
+    pctChange(dowFinal.price, dowFinal.prevClose),
+    dowFinal.history,
+  );
+  add(
+    "oil",
+    "Oil (WTI)",
+    "WTI",
+    oilFinal.price,
+    pctChange(oilFinal.price, oilFinal.prevClose),
+    oilFinal.history,
   );
 
-  // Ethereum
-  add(
-    "ethereum",
-    "Ethereum",
-    "ETH",
-    spotPrice(1, "ethereum"),
-    cgChange("ethereum"),
-  );
-
-  // Gold
-  add("gold", "Gold", "XAU/oz", spotPrice(2), 0);
-
-  // Silver
-  add("silver", "Silver", "XAG/oz", spotPrice(3), 0);
-
-  // S&P 500
-  if (sp500Data.price > 0) {
-    add(
-      "sp500",
-      "S&P 500",
-      "SPX",
-      sp500Data.price,
-      prevChange(sp500Data.price, sp500Data.prevClose),
-      sp500Data.history,
-    );
-  }
-
-  // NASDAQ
-  if (nasdaqData.price > 0) {
-    add(
-      "nasdaq",
-      "NASDAQ",
-      "NDX",
-      nasdaqData.price,
-      prevChange(nasdaqData.price, nasdaqData.prevClose),
-      nasdaqData.history,
-    );
-  }
-
-  // Dow Jones
-  if (dowData.price > 0) {
-    add(
-      "dow",
-      "Dow Jones",
-      "DJIA",
-      dowData.price,
-      prevChange(dowData.price, dowData.prevClose),
-      dowData.history,
-    );
-  }
-
-  // WTI Oil
-  if (oilData.price > 0) {
-    add(
-      "oil",
-      "Oil (WTI)",
-      "WTI",
-      oilData.price,
-      prevChange(oilData.price, oilData.prevClose),
-      oilData.history,
-    );
-  }
-
-  // Sort by defined order
   const ORDER = [
     "bitcoin",
     "ethereum",
@@ -354,20 +355,22 @@ export function useMarketPrices(): MarketState {
     isLoading: true,
     lastUpdated: null,
   });
+  const cancelledRef = useRef(false);
 
   useEffect(() => {
-    let cancelled = false;
+    cancelledRef.current = false;
     let timer: ReturnType<typeof setInterval> | null = null;
 
     const load = async () => {
-      if (!cancelled) setState((prev) => ({ ...prev, isLoading: true }));
+      if (!cancelledRef.current)
+        setState((prev) => ({ ...prev, isLoading: true }));
       try {
         const assets = await fetchAllAssets();
-        if (!cancelled) {
+        if (!cancelledRef.current) {
           setState({ assets, isLoading: false, lastUpdated: new Date() });
         }
       } catch {
-        if (!cancelled) {
+        if (!cancelledRef.current) {
           setState((prev) => ({ ...prev, isLoading: false }));
         }
       }
@@ -377,7 +380,7 @@ export function useMarketPrices(): MarketState {
     timer = setInterval(load, REFRESH_INTERVAL_MS);
 
     return () => {
-      cancelled = true;
+      cancelledRef.current = true;
       if (timer !== null) clearInterval(timer);
     };
   }, []);

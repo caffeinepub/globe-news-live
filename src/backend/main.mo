@@ -168,7 +168,7 @@ actor {
     cachedSP500 := sp500;
 
     let nasdaq = await Outcall.httpGetRequest(
-      "https://stooq.com/q/d/l/?s=%5Endq&i=d",
+      "https://stooq.com/q/d/l/?s=%5Endx&i=d",
       [],
       transform,
     );

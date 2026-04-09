@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { NewsItem } from "../backend.d";
+import type { NewsItem } from "../types";
 import { geocodeText } from "../utils/geocode";
 
 // rss2json.com: free, no API key needed (do NOT add &count= — that requires a paid key)

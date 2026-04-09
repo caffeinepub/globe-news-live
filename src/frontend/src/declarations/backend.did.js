@@ -39,9 +39,16 @@ export const TransformationOutput = IDL.Record({
 });
 
 export const idlService = IDL.Service({
+  'fetchStooqCSV' : IDL.Func([IDL.Text], [IDL.Text], []),
+  'getCachedDow' : IDL.Func([], [IDL.Text], ['query']),
+  'getCachedNASDAQ' : IDL.Func([], [IDL.Text], ['query']),
+  'getCachedOil' : IDL.Func([], [IDL.Text], ['query']),
+  'getCachedSP500' : IDL.Func([], [IDL.Text], ['query']),
   'getLastUpdated' : IDL.Func([], [IDL.Int], ['query']),
+  'getMarketLastUpdated' : IDL.Func([], [IDL.Int], ['query']),
   'getNews' : IDL.Func([], [IDL.Vec(NewsItem)], ['query']),
   'getNextCountry' : IDL.Func([IDL.Text], [IDL.Text], ['query']),
+  'refreshMarketData' : IDL.Func([], [], []),
   'refreshNews' : IDL.Func([], [], []),
   'transform' : IDL.Func(
       [TransformationInput],
@@ -81,9 +88,16 @@ export const idlFactory = ({ IDL }) => {
   });
   
   return IDL.Service({
+    'fetchStooqCSV' : IDL.Func([IDL.Text], [IDL.Text], []),
+    'getCachedDow' : IDL.Func([], [IDL.Text], ['query']),
+    'getCachedNASDAQ' : IDL.Func([], [IDL.Text], ['query']),
+    'getCachedOil' : IDL.Func([], [IDL.Text], ['query']),
+    'getCachedSP500' : IDL.Func([], [IDL.Text], ['query']),
     'getLastUpdated' : IDL.Func([], [IDL.Int], ['query']),
+    'getMarketLastUpdated' : IDL.Func([], [IDL.Int], ['query']),
     'getNews' : IDL.Func([], [IDL.Vec(NewsItem)], ['query']),
     'getNextCountry' : IDL.Func([IDL.Text], [IDL.Text], ['query']),
+    'refreshMarketData' : IDL.Func([], [], []),
     'refreshNews' : IDL.Func([], [], []),
     'transform' : IDL.Func(
         [TransformationInput],

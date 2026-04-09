@@ -10,7 +10,7 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import * as THREE from "three";
-import type { NewsItem } from "../backend.d";
+import type { NewsItem } from "../types";
 import type { EarthquakeItem, ISSItem, VolcanoItem } from "../types";
 import type {
   AirQualityPin,

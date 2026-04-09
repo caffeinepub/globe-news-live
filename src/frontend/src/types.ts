@@ -1,3 +1,15 @@
+export interface NewsItem {
+  id: string;
+  title: string;
+  description: string;
+  url: string;
+  source: string;
+  publishedAt: string;
+  lat: number;
+  lng: number;
+  country: string;
+}
+
 export interface EarthquakeItem {
   id: string;
   lat: number;

@@ -37,17 +37,16 @@ export interface http_request_result {
     headers: Array<http_header>;
 }
 export interface backendInterface {
+    fetchStooqCSV(symbol: string): Promise<string>;
+    getCachedDow(): Promise<string>;
+    getCachedNASDAQ(): Promise<string>;
+    getCachedOil(): Promise<string>;
+    getCachedSP500(): Promise<string>;
     getLastUpdated(): Promise<bigint>;
+    getMarketLastUpdated(): Promise<bigint>;
     getNews(): Promise<Array<NewsItem>>;
     getNextCountry(current: string): Promise<string>;
+    refreshMarketData(): Promise<void>;
     refreshNews(): Promise<void>;
     transform(input: TransformationInput): Promise<TransformationOutput>;
-    // Market data via ICP http-outcalls (bypasses browser CORS)
-    refreshMarketData(): Promise<void>;
-    fetchStooqCSV(symbol: string): Promise<string>;
-    getCachedSP500(): Promise<string>;
-    getCachedNASDAQ(): Promise<string>;
-    getCachedDow(): Promise<string>;
-    getCachedOil(): Promise<string>;
-    getMarketLastUpdated(): Promise<bigint>;
 }
